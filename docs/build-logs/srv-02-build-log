@@ -1,0 +1,452 @@
+## Building a host - srv-02 ##
+
+## It is assumed that the server will be built on hardware that supports hardware virtualization.
+
+## Follow the below steps if you are building the server as a VM in an ESX environment ##
+
+# Log in to vCenter. Preferably, select an ESXi 5.1 host that supports both host and guest OS CPU virtualization.
+# Host CPU hardware virtualization support is enabled in BIOS. Hardware virtualization support for a guest OS on an ESXi host is enabled by checking the "hardware virt support - Expose hardware assisted Virtualization to the guest OS" option under "Customize Hardware->CPU"
+# in the web vCenter client during the VM build. This option is not available in the regular vCenter client and is greyed out if the ESXi host CPU does not support guest OS CPU hardware virtualization.
+#
+
+#VM Specs
+#Name: srv-02
+##Type: Ubuntu 64 bit
+#CPU:24. Number of virtual sockets: 24, number of cores per socket: 1. Total cores: 24.
+#Memory:96 Gig
+#NIC:5
+# Harddisk:256GB
+
+Install ubuntu 16.04.	2 Server with Openssh server.
+
+# Install & Update packages
+	
+	sudo apt-get install
+	sudo apt-get update
+	sudo apt-get install wireshark wget curl bridge-utils 
+
+# Install utils and tools 
+apt-get install wireshark bridge-utils curl
+ 
+# Initialize phy interfaces and Set up bridge network for mgmt.
+# Note: auto<if> and iface <if> inet manual brings up interface automatically
+
+sudo nano /etc/network/interfaces
+
+auto ens160 <-- To lab mgmt network
+ iface ens160 inet manual
+
+
+auto en161   <- underlay to communicate with other hosts
+iface ens161 inet static
+  address 10.1.1.2
+  netmask 255.255.255.0
+
+
+auto ens192
+iface ens192 inet manual
+
+auto ens224
+iface ens224 inet manual
+
+auto ens256
+iface ens256 inet manual
+
+
+# Auto create br-mgmt0. add mgmt interface - ens32. This also automatically creates and brings br-mgmt0 interface up
+
+auto br-mgmt0   <- mgmt bridge for host
+iface br-mgmt0 inet static
+	address 172.20.254.223
+	netmask 255.255.254.0
+	gateway 172.20.254.1
+	dns-nameservers 8.8.8.8 4.4.4.4
+#   static route example
+#	post-up route add -net 10.0.0.0 netmask 255.0.0.0 gw 10.18.44.1	
+	bridge_ports ens160
+	bridge_stp off
+	bridge_fd 0
+	bridge_maxwait 0
+
+mkdir ~/Downloads
+cd Downloads
+
+Install openvswitch-2.9.2
+
+# Install dependencies
+sudo apt-get install git 
+python-simplejson python python-qt4 python-twisted-conch automake autoconf gcc uml-utilities libtool build-essential git libssl-dev pkg-config linux-headers-`uname -r`
+
+# Compile, build, and install Open vSwitch 2.9.2
+cd ~/Downloads/openvswitch
+wget http://openvswitch.org/releases/openvswitch-2.9.2.tar.gz
+tar xvzf openvswitch-2.9.2.tar.gz openvswitch-2.9.2
+cd openvswitch-2.9.2/
+./boot.sh
+./configure
+
+### By default all files are installed under ``/usr/local``. Open vSwitch also
+expects to find its database in ``/usr/local/etc/openvswitch`` by default.###
+
+make
+sudo make install
+### This will install the executables and manpages into the running system, by default under ``/usr/local/bin ###	
+
+## load openvswitch module into kernel ###
+sudo modprobe openvswitch
+## verify that the module is loaded ##
+lsmod  | grep openvswitch
+
+
+##Starting openvswitch ##
+--------
+
+Before starting ovs-vswitchd itself, you need to start its configuration
+database, ovsdb-server. Each machine on which Open vSwitch is installed should
+run its own copy of ovsdb-server. Before ovsdb-server itself can be started,
+configure a database that it can use::
+
+       sudo  mkdir -p /usr/local/etc/openvswitch
+       sudo ovsdb-tool create /usr/local/etc/openvswitch/conf.db \
+           vswitchd/vswitch.ovsschema
+
+Configure ovsdb-server to use database created above, to listen on a Unix
+domain socket, to connect to any managers specified in the database itself, and
+to use the SSL configuration in the database::
+
+    sudo mkdir -p /usr/local/var/run/openvswitch
+    sudo  ovsdb-server --remote=punix:/usr/local/var/run/openvswitch/db.sock \
+        --remote=db:Open_vSwitch,Open_vSwitch,manager_options \
+        --private-key=db:Open_vSwitch,SSL,private_key \
+        --certificate=db:Open_vSwitch,SSL,certificate \
+        --bootstrap-ca-cert=db:Open_vSwitch,SSL,ca_cert \
+        --pidfile --detach --log-file
+
+.. note::
+  If you built Open vSwitch without SSL support, then omit ``--private-key``,
+  ``--certificate``, and ``--bootstrap-ca-cert``.)
+
+Initialize the database using ovs-vsctl. This is only necessary the first time
+after you create the database with ovsdb-tool, though running it at any time is
+harmless::
+
+    sudo ovs-vsctl --no-wait init
+
+Start the main Open vSwitch daemon, telling it to connect to the same Unix
+domain socket::
+
+    sudo  ovs-vswitchd --pidfile --detach --log-file
+
+# Validating
+ 
+	sudo ovs-vsctl --version
+	sudo ovs-vsctl show
+
+
+	 sudo ovs-vsctl add-br br0
+     sudo ovs-vsctl add-port br0 eth0
+	 
+	 
+!!!!! Register node with ODL for OVSDB. This is called passive mode in ODL!!!!
+
+# ODL uses the opendaylight-iid value as the OVSDB node ID when a node registers with it. The opendaylight-iid key/value pair is available in the external-id column of the open_vswitch table on the node. 
+# If opendaylight-iid key/value pair is not configured , odl uses uuid as the node id. We set this value to srv-01-01 to help with CRUD  operations. In case of active mode where ODL initiates the connection to the Open vSwitch  , it will
+# automatically set opendaylight-iid key value so that it can use node id.
+
+# Check to ensure that  opendaylight-iid is not set
+
+sudo ovs-vsctl list open_vswitch
+
+# Now restart  openvswitch by setting opendaylight-iid and system-id.  We set system-id to random , which generates a random number to uniquely id the openvswitch instance on the node.
+
+ sudo /usr/local/share/openvswitch/scripts/ovs-ctl restart --system-id=random  \
+ --external-id="opendaylight-iid=/network-topology:network-topology/network-topology:topology[network-topology:topology-id='ovsdb:1']/network-topology:node[network-topology:node-id='ovsdb:srv-02-01']"
+
+
+#Verify
+
+sudo ovs-vsctl list open_vswitch
+
+# set the node  to connect to the odl for mgmt via OVSDB
+
+	 sudo ovs-vsctl set-manager tcp:172.20.254.221:6640
+	 
+#Verify in ODL using REST that  the node is connected.
+
+sudo ovs-vsctl show
+
+# Add the following to /etc/rc.local/ to ensure that openvswitch starts after reboot.
+
+ sudo /usr/local/share/openvswitch/scripts/ovs-ctl start --system-id=random  \
+ --external-id="opendaylight-iid=/network-topology:network-topology/network-topology:topology[network-topology:topology-id='ovsdb:1']/network-topology:node[network-topology:node-id='ovsdb:srv-02-01']"
+
+# Load openvswitch kernel module on boot by editing /etc/modules file
+ 
+sudo nano /etc/modules
+	openvswitch
+
+# verification
+lsmod | grep openvswitch
+
+##install qemu 2.8##
+
+
+
+### Get and unzip the source code ###
+wget http://download.qemu-project.org/qemu-2.8.0.tar.xz
+tar -xvf  qemu-2.8.0.tar.xz
+
+### Modify the file that limits the # of NICs ##
+cd qemu-2.8.0
+vi include/net/net.h
+ - At the bottom, change the value of "#define MAX_NICS" to 128
+ - save and exit the file
+
+### Check if KVM is already installed ###
+dpkg --get-selections | grep kvm
+
+### If kvm or qemu-kvm are installed ###
+apt-get remove -y kvm
+apt-get purge -y qemu-kvm
+
+
+### Install libraries necessary to build the package ###
+apt-get install -y libglib2.0-0 libglib2.0-dev libglib2.0-bin libaio1 libaio-dev libcap2 libcap2-bin libcap-ng0 libcap-ng-dev libcap-dev libcurl4-openssl-dev g++ libtool vim sudo vlan uml-utilities nfs-common ifenslave nfs-common make dh-autoreconf 
+
+
+### Setup the build for your machine and install . Select  x86_64-softmmu target to match host arch and speed up install ###
+./configure --prefix=/usr/bin --enable-linux-aio --enable-curl --enable-kvm --target-list=x86_64-softmmu
+make
+sudo make install 
+
+###Executables will end up in /usr/bin/bin.
+Add links to /usr/bin ###
+
+sudo ln -s /usr/bin/bin/qemu-img /usr/bin/
+sudo ln -s /usr/bin/bin/qemu-system-x86_64 /usr/bin/
+sudo ln -s /usr/bin/bin/qemu-nbd /usr/bin/
+sudo ln -s /usr/bin/bin/qemu-ga /usr/bin/
+sudo ln -s /usr/bin/bin/qemu-io /usr/bin/
+
+
+### KVM allows qemu to use host's hardware accelerated virtualization capability. Host CPU needs to support it and need to be enabled in BIOS.
+ QEMU  can still can launch vms without kvm , but things will be slow without hardware acceleration. 
+
+ 
+ ###
+ 
+### check if kvm and kvm-intel kernel modules are loaded to ensure KVM . If modules are loaded automatically when the hardware supports it modules will be normally loaded during the build#
+
+lsmod | grep kvm
+
+## Note: kvm kernel modules are loaded automatically after reboot.
+
+### If no output, try to add modules ###
+sudo /sbin/modprobe kvm
+sudo /sbin/modprobe kvm-intel 
+# or: sudo /sbin/modprobe kvm-amd
+
+# If modules can't be added or no output , it means that  server does not support hardware virtualization. srv-02 does not support hardware acceleration.
+
+# verify qemu installation
+qemu-system-x86_64 --version
+
+### QEMU can create TAP interfaces but will not bring them up.
+### we use two sets of ifup and ifdown scripts with qemu to bring the tap interfaces up.
+### 1. Use tap-mgmt-up and tap-mgmt-down to bring the management TAP interface up and assign it to the management bridge, br-mgmt0, created earlier.
+### 2. Use tap-data-up and tap-data-down to bring data tap interface up. These interfaces will be used by OpenFlow switches later.
+
+### create tap-mgmt scripts ###
+mkdir BBLAB
+cd BBLAB
+mkdir new_xr
+
+cd /home/lab/BBLAB/
+ nano tap-mgmt-ifup 
+
+#!/bin/sh
+switch='br-mgmt0'
+/sbin/ifconfig $1 0.0.0.0 up
+brctl addif ${switch} $1
+
+ nano tap-mgmt-ifdown
+
+#!/bin/sh
+switch='br-mgmt0'
+/sbin/ifconfig $1 0.0.0.0 down
+brctl delif ${switch} $1
+
+# Make both files executable
+ chmod +x /home/lab/BBLAB/tap-mgmt-ifup /home/lab/BBLAB/tap-mgmt-ifdown
+
+### create tap-data scripts ###
+
+cd /home/lab/BBLAB/
+
+ nano tap-data-ifup 
+
+#!/bin/sh
+/sbin/ifconfig $1 0.0.0.0 up
+
+
+ nano tap-data-ifdown
+
+#!/bin/sh
+/sbin/ifconfig $1 0.0.0.0 down
+
+
+# Make both files executable
+ chmod +x /home/lab/BBLAB/tap-data-ifup /home/lab/BBLAB/tap-data-ifdown
+ 
+Make the scripts executable.
+ 
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!               Prepare XR Image to boot in KVM                     !!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ 
+cd /home/lab/BBLAB/new_xr/ 
+### Download IOS-XRv  files  ###
+## The tar file contains .qcow2, ova and .iso files ###
+
+
+###  Use the .qcow2 file to create a base router image. ### 
+
+Eg: qemu-img create -b xrv9k-fullk9-x-6.1.2.qcow2 -f qcow2 xr6.1.2.qcow2
+
+qemu-img create -b xrv9k-fullk9-x-6.1.2.qcow2 -f qcow2 xrv9k-6.1.2.qcow2
+
+
+### You can also  create a  .qcow2 and boot using provided iso to create a base router image.###
+
+#Eg: 
+#  sudo qemu-img create -f qcow2 xr6.1.2.qcow2 60G
+#  sudo qemu-system-x86_64  -enable-kvm -daemonize -cpu kvm64  -m 5120M  -display none -rtc base=utc  -hda xr6.1.2.qcow2 \
+# -boot once=d -cdrom /home/lab/BBLAB/new_xr/xrv9k-fullk9-x-6.1.2.iso \
+# -serial telnet::4008,server,nowait -serial telnet::5008,server,nowait \
+# -pidfile pids/xr6.1.2.pid 
+
+
+### You can also convert vmdk to qcow2 format if vmdk file pre-exists ###
+qemu-img convert <source image name>.vmdk -O qcow2 <new qcow file name>.qcow2
+Example:  Converting iosxrv-k9-lab-6.1.2.vmdk to qcow
+
+     qemu-img convert iosxrv-k9-lab-6.1.2.vmdk -O qcow2 xr6.1.2.qcow2
+
+
+### Create a test router overlay file r1.qcow2  to launch in KVM ###
+Eg: qemu-img create -b <new qcow file name>.qcow2 -f qcow2 <overlay file name>
+
+    qemu-img create -b xrv9k-6.1.2.qcow2 -f qcow2 r1.qcow2
+	
+! Note: overlay file and qcow image must remain in the same folder to launch
+
+Create a PID file in /home/lab/BBLAB/new_xr/pids directory
+
+touch r1.pid 
+
+!!!!  Test launch a IOS XRv router r1 in qemu .
+
+#  console  4000 +
+# aux 5000+
+
+#r1.vlab01
+
+sudo qemu-system-x86_64  -enable-kvm  -daemonize -cpu Westmere  -smp cores=1,threads=1,sockets=1 -m 5120M  -hda /home/lab/BBLAB/new_xr/r1.qcow2 -name r1,process="r1"  -display none  -rtc base=utc \
+-serial telnet::4000,server,nowait -serial telnet::5000,server,nowait \
+-netdev tap,id=tap0,ifname=tap0,script=/home/lab/BBLAB/new_xr/tap-mgmt-ifup,downscript=/home/lab/BBLAB/new_xr/tap-mgmt-ifdown -device e1000,netdev=tap0,mac=00:01:ee:09:00:00 \
+-netdev tap,id=tap1001,ifname=tap1001,script=/home/lab/BBLAB/new_xr/tap-data-ifup,downscript=/home/lab/BBLAB/new_xr/tap-data-ifdown -device e1000,netdev=tap1001,mac=00:01:ee:01:00:01 \
+-netdev tap,id=tap1002,ifname=tap1002,script=/home/lab/BBLAB/new_xr/tap-data-ifup,downscript=/home/lab/BBLAB/new_xr/tap-data-ifdown -device e1000,netdev=tap1002,mac=00:01:ee:01:00:02 \
+-netdev tap,id=tap1003,ifname=tap1003,script=/home/lab/BBLAB/new_xr/tap-data-ifup,downscript=/home/lab/BBLAB/new_xr/tap-data-ifdown -device e1000,netdev=tap1003,mac=00:01:ee:01:00:03 \
+-netdev tap,id=tap1004,ifname=tap1004,script=/home/lab/BBLAB/new_xr/tap-data-ifup,downscript=/home/lab/BBLAB/new_xr/tap-data-ifdown -device e1000,netdev=tap1004,mac=00:01:ee:01:00:04 \
+-pidfile pids/r1.pid
+
+# Verify access to router using console port 4000
+# netstat -anp46|grep qemu
+
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!          Create  Lab IOSXRv qcow2 images to boot                  !!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+<To be Configured>
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!               Prepare NXOSv routers to boot in KVM                                                           !!!
+!!! Thx to -http://blog.system76.com/post/139138591598/howto-qemu-w-ubuntu-xenial-host-uefi-guest               !!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+cd /home/lab/BBLAB/nxos/9k/703I61
+# install ovfm package for bios support 
+(read NXOSv doc for more details -https://www.cisco.com/c/en/us/td/docs/switches/datacenter/nexus9000/sw/7-x/nx-osv/configuration/guide/b_NX-OSv_9000/b_NX-OSv_chapter_01.html#concept_1C4584D8C8844076BF07A147D3F080AB )
+
+apt-get install ovmf
+# dpkg -L ovmf
+# all VM instances can share the same system-wide, read-only OVMF_CODE.fd file from the ovmf package,
+# but each instance needs a private, writable copy of OVMF_VARS.fd.
+# we create a  copy of the /usr/share/OVMF/OVMF_VARS.fd file from the ovmf package for ce1.
+ 
+cp /usr/share/OVMF/OVMF_VARS.fd /home/lab/BBLAB/nxos/9k/703I61/ce1_OVMF_VARS.fd
+
+# Download nxosv qcow2 file and clone it for ce1
+
+/home/lab/BBLAB/nxos/9k/703I61/qemu-img create -b nxosv-final.703I61.qcow2  -f qcow2 ce1.qcow2
+
+# create pid file
+cd pids
+touch ce1.pid 
+
+# test boot ce1
+
+
+sudo qemu-system-x86_64 -enable-kvm  -daemonize  -cpu Westmere -smp 1,cores=1,threads=1,sockets=1 -m 8192M -name ce1,process="ce1" -display none -rtc base=utc  \
+-drive if=pflash,format=raw,readonly,file=/usr/share/OVMF/OVMF_CODE.fd \
+-drive if=pflash,format=raw,file=/home/lab/BBLAB/nxos/9k/703I61/ce1_OVMF_VARS.fd \
+-device ahci,id=ahci0,bus=pci.0 -drive file=/home/lab/BBLAB/nxos/9k/703I61/ce1,if=none,id=drive-sata-disk0,format=qcow2 \
+-device ide-drive,drive=drive-sata-disk0,bus=ahci0.0,id=hda01 \
+-serial telnet::4012,server,nowait -serial telnet::5012,server,nowait \
+-netdev tap,id=tap12,ifname=tap12,script=/home/lab/BBLAB/tap-mgmt-ifup,downscript=/home/lab/BBLAB/tap-mgmt-ifdown -device e1000,netdev=tap12,id=mgmt0,mac=00:01:ee:09:01:12  \
+-netdev tap,id=tap1061,ifname=tap1061,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1061,id=data0,mac=00:01:ee:01:01:61   \
+-netdev tap,id=tap1062,ifname=tap1062,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1062,id=data1,mac=00:01:ee:01:01:62   \
+-pidfile /home/lab/BBLAB/nxos/9k/703I61/ce1.pid
+
+# if the  device falls into loader> prompt
+#loader> dir to loate the boot file
+boot  nxos.7.0.3.I6.1.bin
+# As soon as you set up your Cisco Nexus 9000v , you need to configure the boot image in your system to avoid dropping to the "loader >" prompt after reload/shut down.
+
+Example:
+
+config t
+
+  boot nxos nxos.7.0.3.I6.1.bin
+
+copy running starting
+
+###
+# Verify access to router using console port 4012
+# netstat -anp46|grep qemu
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!               Create  Lab NXOSv router .qcow2 images to boot                                                !!!
+!!!                                                                                                             !!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+<To be Configured>
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!    use script Start-lab-srv-02.sh  to Launch v routers  in KVM    !!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+
+--------------------------------------Start-lab-srv-02.sh-------------------------------
+
+#  console line 4000+ 
+#  aux line 5000+
+ 
+<To be Configured>
+
+---------------------------------------------------------------------------------------
+
+
+
+
+ 

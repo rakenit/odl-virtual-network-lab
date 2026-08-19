@@ -1,0 +1,16 @@
+## Lab Variable Reference
+
+This file tracks the port, interface, MAC address, and tunnel ranges used by QEMU and the virtual network devices.
+
+| Variable | Range or Pattern |
+| --- | --- |
+| Console ports | `4000-4024` |
+| Auxiliary ports | `5000-5024` |
+| Management TAP interfaces | `tap0-tap22` |
+| Management guest NIC MAC addresses | `00:01:ee:09:01:00` to `00:01:ee:09:01:25` |
+| Data TAP interfaces | `tap1001-tap1096`, `tap1201-tap1248` |
+| Data TAP MAC addresses | `00:01:ee:01:01:01` to `00:01:ee:01:01:96`, `00:01:ee:01:02:01` to `00:01:ee:01:02:48` |
+| L2TPv3 UDP ports | `9101-9214` |
+| L2TPv3 guest NIC MAC addresses | `00:01:ee:01:91:01` to `00:01:ee:01:92:14` |
+
+For L2TPv3 guest NICs, the final four MAC address digits correspond to the destination UDP port.

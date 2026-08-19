@@ -1,0 +1,223 @@
+Install Ubuntu 16.04.2 LTS Server with 1 Mgmt and 4 Data Interfaces. Enable OpenSSH server. 
+The server will boot up with a DHCP assigned IP
+
+# Install updates and packages. The bridge-utils package is required to enable bridging for the management network.
+
+sudo apt-get install && sudo apt-get update && sudo apt-get upgrade
+sudo apt-get install wireshark curl git bridge-utils
+
+# Add the follow config to /etc/network/interfaces file. You can use ifconfig -a to list all the interfaces. 
+# Change the interface name to match what is on the host.
+
+# To lab Mgmt Network.
+auto ens32
+iface ens32 inet manual
+
+# Underlay to communicate with other hosts.
+auto ens33
+iface ens33 inet static
+  address 10.1.1.4
+  netmask 255.255.255.0
+
+auto ens34
+iface ens35 inet manual
+
+auto ens35
+iface ens35 inet manual
+
+auto ens36
+iface ens36 inet manual
+
+# Auto create br-mgmt0. add mgmt interface - ens32. This also automatically creates and brings br-mgmt0 interface up. Need bridge-utils pkg installed.
+auto br-mgmt0
+iface br-mgmt0  inet static
+  address 172.20.254.174
+  netmask 255.255.254.0
+  gateway 172.20.254.1
+  dns-nameservers 8.8.8.8 8.8.4.4
+#static route example
+# post-up route add -net 10.0.0.0 netmask 255.0.0.0 gw 10.18.44.1
+  bridge_ports ens32
+  bridge_stp off
+  bridge_fd 0
+  bridge_maxwait 0
+
+---
+Install openvswitch-2.9.2
+
+# Install dependencies
+
+sudo apt-get install git python-simplejson python python-qt4 python-twisted-conch automake autoconf gcc uml-utilities libtool build-essential git libssl-dev pkg-config linux-headers-`uname -r`
+
+# Compile, build, and install Open vSwitch 2.9.2
+cd ~/Downloads/openvswitch
+wget http://openvswitch.org/releases/openvswitch-2.9.2.tar.gz
+tar xvzf openvswitch-2.9.2.tar.gz openvswitch-2.9.2
+cd openvswitch-2.9.2/
+./boot.sh
+./configure
+
+### By default all files are installed under ``/usr/local``. Open vSwitch also
+expects to find its database in ``/usr/local/etc/openvswitch`` by default.###
+
+make
+sudo make install
+### This will install the executables and manpages into the running system, by default under ``/usr/local/bin ###
+
+## load openvswitch module into kernel ###
+sudo modprobe openvswitch
+## verify that the module is loaded ##
+lsmod  | grep openvswitch
+
+
+##Starting openvswitch ##
+--------
+
+Before starting ovs-vswitchd itself, you need to start its configuration
+database, ovsdb-server. Each machine on which Open vSwitch is installed should
+run its own copy of ovsdb-server. Before ovsdb-server itself can be started,
+configure a database that it can use::
+
+       sudo  mkdir -p /usr/local/etc/openvswitch
+       sudo ovsdb-tool create /usr/local/etc/openvswitch/conf.db \
+           vswitchd/vswitch.ovsschema
+
+
+# Create a log file 
+	cd /usr/local/var, sudo mkdir log , cd log,sudo mkdir openvswitch,cd openvswitch, sudo touch ovsdb-server.log
+	
+Configure ovsdb-server to use database created above, to listen on a Unix
+domain socket, to connect to any managers specified in the database itself, and
+to use the SSL configuration in the database::
+
+    sudo mkdir -p /usr/local/var/run/openvswitch
+    sudo  ovsdb-server --remote=punix:/usr/local/var/run/openvswitch/db.sock \
+        --remote=db:Open_vSwitch,Open_vSwitch,manager_options \
+        --private-key=db:Open_vSwitch,SSL,private_key \
+        --certificate=db:Open_vSwitch,SSL,certificate \
+        --bootstrap-ca-cert=db:Open_vSwitch,SSL,ca_cert \
+        --pidfile --detach --log-file
+
+.. note::
+  If you built Open vSwitch without SSL support, then omit ``--private-key``,
+  ``--certificate``, and ``--bootstrap-ca-cert``.)
+
+Initialize the database using ovs-vsctl. This is only necessary on the first run
+after you create the database with ovsdb-tool, though running it at any time is
+harmless::
+
+    sudo ovs-vsctl --no-wait init
+
+Start the main Open vSwitch daemon, telling it to connect to the same Unix
+domain socket::
+
+    sudo  ovs-vswitchd --pidfile --detach --log-file
+
+# Validating
+ 
+	sudo ovs-vsctl --version
+	sudo ovs-vsctl show
+
+
+	 sudo ovs-vsctl add-br br0
+     sudo ovs-vsctl add-port br0 eth0
+	 
+	 
+!!!!! Register node with ODL for OVSDB. This is called passive mode in ODL!!!!
+
+# ODL uses the opendaylight-iid value as the OVSDB node ID when a node registers with it. The opendaylight-iid key/value pair is available in the external-id column of the open_vswitch table on the node. 
+# If opendaylight-iid key/value pair is not configured , odl uses uuid as the node id. We set this value to srv-03-01 to help with CRUD  operations. In case of active mode where ODL initiates the connection to the Open vSwitch  , it will
+# automatically set opendaylight-iid key value so that it can use node id.
+
+# Check to ensure that  opendaylight-iid is not set
+
+sudo ovs-vsctl list open_vswitch
+
+# Now restart  openvswitch by setting opendaylight-iid and system-id.  We set system-id to random , which generates a random number to uniquely id the openvswitch instance on the node.
+
+ sudo /usr/local/share/openvswitch/scripts/ovs-ctl restart --system-id=random  \
+ --external-id="opendaylight-iid=/network-topology:network-topology/network-topology:topology[network-topology:topology-id='ovsdb:1']/network-topology:node[network-topology:node-id='ovsdb:srv-04-01']"
+
+
+#Verify
+
+sudo ovs-vsctl list open_vswitch
+
+# set the node  to connect to the odl for mgmt via OVSDB
+
+	 sudo ovs-vsctl set-manager tcp:172.20.254.221:6640
+	 
+#Verify in ODL using REST that  the node is connected.
+
+sudo ovs-vsctl show
+
+# Create /etc/rc.local with 
+# #!/bin/sh -e
+# exit 0
+# Make rc.local executable
+chmod +x rc.local
+
+#add the following to /etc/rc.local/ before exit 0 to ensure that openvswitch starts after reboot. 
+
+ sudo /usr/local/share/openvswitch/scripts/ovs-ctl start --system-id=random  \
+ --external-id="opendaylight-iid=/network-topology:network-topology/network-topology:topology[network-topology:topology-id='ovsdb:1']/network-topology:node[network-topology:node-id='ovsdb:srv-04-01']"
+
+# Load openvswitch kernel module on boot by editing /etc/modules file
+ 
+sudo nano /etc/modules
+	openvswitch
+
+# verification
+lsmod | grep openvswitch
+
+-----
+
+Install qemu-2.12.0
+
+cd ~/Downloads/qemu
+
+wget https://download.qemu.org/qemu-2.12.0.tar.xz
+
+tar xvf qemu-2.12.0.tar.xz
+
+sudo vi include/net/net.h
+ - At the bottom, change the value of "#define MAX_NICS" to 128
+ - save and exit the file
+
+### Check if KVM is already installed ###
+dpkg --get-selections | grep kvm
+
+### If kvm or qemu-kvm are installed ###
+apt-get remove -y kvm
+apt-get purge -y qemu-kvm
+
+
+### Install libraries necessary to build the package ###
+sudo apt-get install -y libglib2.0-0 libglib2.0-dev libglib2.0-bin libaio1 libaio-dev libcap2 libcap2-bin libcap-ng0 libcap-ng-dev \
+libcap-dev libcurl4-openssl-dev g++ libtool vim sudo vlan uml-utilities nfs-common ifenslave \
+nfs-common make dh-autoreconf libpixman-1-0 bison  libpixman-1-dev flex
+
+### Setup the build for your machine and install . Select  x86_64-softmmu target to match host arch and speed up install ###
+./configure --prefix=/usr --enable-linux-aio --enable-curl --enable-kvm --target-list=x86_64-softmmu
+make
+sudo make install 
+
+###Executables will end up in /usr/bin
+
+
+# verification
+
+qemu-system-x86_64 --version
+
+-----
+
+
+
+
+
+
+
+
+
+
+

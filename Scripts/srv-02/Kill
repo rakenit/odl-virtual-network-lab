@@ -1,0 +1,13 @@
+#!/bin/sh
+
+set -eu
+
+if [ ! -d pids ]; then
+  exit 0
+fi
+
+for pid_file in pids/*.pid; do
+  [ -e "$pid_file" ] || exit 0
+  sudo kill -9 "$(sudo cat "$pid_file")"
+  sudo rm -f "$pid_file"
+done

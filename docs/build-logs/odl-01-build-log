@@ -1,0 +1,76 @@
+# Steps to build and run odl-01 docker container on prod-01 server using the ODL Neon 0.10.0 release.  It is assumed that prod-01 has docker installed and the docker image and 
+networks have been created. See prod-01-build-log file for more details.
+# The container will have 3 interfaces. First interface connects to the Lab Mgmt network. The other two are used to connect to the 
+# backbone networks. We will launch the container, attach them to appropriate networks,  and install required ODL packages.
+
+# Verify that the odl docker image odl:oxygen-k0100 exists
+
+sudo docker image ls -a
+
+# Create odl-01 container and attach it to the mgmt network. --cap-add NET_ADMIN permits container network config to be changed from inside 
+# the container.
+
+sudo docker run --cap-add NET_ADMIN -itd --name odl-01  --network=net-172-20-254-23 --ip 172.20.254.221 --hostname odl-01 --dns 8.8.8.8 odl:neon-k0100
+# Attach the remaining networks to the container
+sudo docker network connect --ip 10.99.201.9  net-10-99-201-24 odl-01
+sudo docker network connect --ip 10.99.202.9  net-10-99-202-24 odl-01
+
+# Verify the container is running
+sudo docker container  ls -a
+sudo docker inspect odl-01
+
+# verify basic connectivity
+sudo docker exec -it odl-01 bash
+ip -a
+ip route 
+ping 4.2.2.2
+top
+
+# verify ssh access to the container 
+ssh root@172.20.254.221
+
+# odl karaf ssh shell listens by default on port 8101. It can be accessed in two ways. 
+#  1. SSH to the container and connect locally
+	ssh root@172.20.254.221
+        run the client script -  /opt/odl-nitrogen/bin/client 
+	
+# 2. Remotely by using SSH to odl karaf directly on port 8101. Use the locally configured Karaf credentials.
+	
+	ssh karaf@172.20.254.221 -p 8101
+	
+# Note: use logout or CTRL+D to disconnect from the odl karaf shell.
+
+# We will now install the required southbound plugins from the odl-karaf console.
+# Install ODL dlux core module and basic apps. This will also install northbound restconf
+
+	feature:install odl-dlux-core odl-dluxapps-topology odl-dluxapps-nodes odl-dluxapps-yangui odl-mdsal-apidocs odl-restconf 
+	
+# Verification: http://172.20.254.221:8181/index.html U:<controller-user> P:<controller-password>
+	
+# Install OVSDB
+
+	feature:install odl-ovsdb-southbound-impl-ui 
+
+# Verification:http://172.20.254.221:8181/restconf/operational/network-topology:network-topology
+
+# Install OpenFlow
+
+	feature:install  odl-openflowplugin-flow-services odl-openflowplugin-flow-services-rest
+
+## We also need to install  odl-openflowplugin-nxm-extensions module to be able to build DLUX->node OF topology links using LLDP. 
+## This allows ODL to recognize OpenFlow OXM fields in the OpenFlow packet for the LLDP PACKET-IN event.
+## In this case, the oxm_field:31 is used by the OF switch to tell ODL the port from which it received the LLDP frame. 
+## This is needed to build the topology. If not installed, you get the below exception in the log.
+##	"java.lang.IllegalStateException: Deserializer for key: msgVersion: 4 objectClass: org.opendaylight.yang.gen.v1.urn.opendaylight.openflow.oxm.rev150225.match.entries.grouping.MatchEntry msgType: 1 oxm_field: 31 experimenterID: null was not found \
+##	- please verify that all needed deserializers are loaded correctly"
+ 
+# Install Nicira extension modules for OpenFlow #
+
+	feature:install odl-openflowplugin-nxm-extensions
+ 
+# Note: The feature odl-openflowplugin-app-table-miss-enforcer feature installs a catch-all rule to send all table-miss traffic to the controller. It is not installed by default. We don't install it.
+
+## ODL registers ovs-switch bridges in network topology for OF in openflow:<datapath ID> format so the datapath ID has to be unique among
+## all ODL managed OF bridges
+
+# Verification:http://172.20.254.221:8181/restconf/operational/network-topology:network-topology

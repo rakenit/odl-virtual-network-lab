@@ -1,0 +1,153 @@
+# Development Host Build Notes
+
+These notes describe the original `dev-01` development host setup used for the virtual network lab. They are retained as historical implementation notes and should be adapted before use in a new environment.
+
+## Base System
+
+Install Ubuntu 16.04 Server with OpenSSH Server enabled.
+
+## System Packages
+
+Install the development packages used by the lab tooling:
+
+```sh
+sudo apt-get install gdebi-core python3-dev python-dev libtool-bin libcurl4-openssl-dev libpcre3-dev libssh-dev libxml2-dev
+sudo apt-get install libxslt1-dev libtool-bin cmake pkg-config xsltproc pip npm nodejs-legacy
+```
+
+## Python Virtual Environment Setup
+
+Verify that `pip` is available:
+
+```sh
+pip list
+```
+
+Install `virtualenv`:
+
+```sh
+pip install virtualenv
+virtualenv --version
+```
+
+Install `virtualenvwrapper`:
+
+```sh
+pip install virtualenvwrapper
+source /usr/local/bin/virtualenvwrapper.sh
+pip list | grep virtual
+```
+
+## Virtual Environment Locations
+
+The original lab stored Python virtual environments under:
+
+```text
+/home/lab/.virtualenvs
+```
+
+Create the directory if it does not already exist:
+
+```sh
+mkdir -p ~/.virtualenvs
+```
+
+Set the `WORKON_HOME` variable:
+
+```sh
+export WORKON_HOME=~/.virtualenvs
+```
+
+Set the project directory. The original lab used:
+
+```text
+/home/lab/projects
+```
+
+```sh
+mkdir -p ~/projects
+export PROJECT_HOME=~/projects
+```
+
+Reload `virtualenvwrapper`:
+
+```sh
+source /usr/local/bin/virtualenvwrapper.sh
+```
+
+To make the settings persistent, add the following lines to `.bashrc`:
+
+```sh
+export WORKON_HOME=~/.virtualenvs
+export PROJECT_HOME=~/projects
+source /usr/local/bin/virtualenvwrapper.sh
+```
+
+## Common Virtualenvwrapper Commands
+
+Enter a virtual environment:
+
+```sh
+workon myenv
+```
+
+List existing virtual environments:
+
+```sh
+lsvirtualenv
+```
+
+Exit a virtual environment:
+
+```sh
+deactivate
+```
+
+Remove a virtual environment:
+
+```sh
+rmvirtualenv myenv
+```
+
+Create an isolated virtual environment:
+
+```sh
+mktmpenv
+```
+
+Copy a virtual environment:
+
+```sh
+cpvirtualenv <source-env> <target-env>
+```
+
+List installed site packages from inside the active virtual environment:
+
+```sh
+lssitepackages
+```
+
+Remove third-party packages from the current virtual environment:
+
+```sh
+wipeenv
+```
+
+## Node.js Tooling
+
+Verify that `npm` is available:
+
+```sh
+npm -v
+```
+
+Install the Node.js tools used by the original lab workflow:
+
+```sh
+sudo npm install bower -g
+sudo npm install gulp -g
+```
+
+## Sanitization Note
+
+The `/home/lab` paths are example values from the original lab. Replace them with paths that match your development host before using these notes in another environment.

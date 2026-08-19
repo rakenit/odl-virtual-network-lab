@@ -1,0 +1,1212 @@
+{
+	"info": {
+		"_postman_id": "db505332-699c-4864-94a6-926bf6df19d9",
+		"name": "OpenDaylight Open vSwitch Layer 2 Virtual Lab",
+		"description": "RESTCONF collection for building the OpenDaylight-managed Open vSwitch Layer 2 topology.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "ODL",
+			"description": "",
+			"item": [
+				{
+					"name": "Change destination MAC address for LLDP speaker",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": " {\r\n    \"address-destination\": \"01:80:C2:00:00:0E\"\r\n}"
+						},
+						"url": {
+							"raw": "{{odl-01-cfg}}/lldp-speaker-config:lldp-speaker-config",
+							"host": [
+								"{{odl-01-cfg}}"
+							],
+							"path": [
+								"lldp-speaker-config:lldp-speaker-config"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get LLDP speaker operational status - RPC",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "http://localhost:8181/restconf/operations/lldp-speaker:get-operational-status",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8181",
+							"path": [
+								"restconf",
+								"operations",
+								"lldp-speaker:get-operational-status"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Change LLDP speaker operational status - RPC",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"input\": {\r\n        \"operational-status\": \"RUN\"\r\n    }\r\n}"
+						},
+						"url": {
+							"raw": "http://localhost:8181/restconf/operations/lldp-speaker:change-operational-status",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8181",
+							"path": [
+								"restconf",
+								"operations",
+								"lldp-speaker:change-operational-status"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete destination MAC address for LLDP speaker",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "{{odl-01-cfg}}/lldp-speaker-config:lldp-speaker-config",
+							"host": [
+								"{{odl-01-cfg}}"
+							],
+							"path": [
+								"lldp-speaker-config:lldp-speaker-config"
+							]
+						}
+					},
+					"response": []
+				}
+			],
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"id": "21c4d299-dd57-4f01-a02e-92fbf9633604",
+						"type": "text/javascript",
+						"exec": [
+							""
+						]
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"id": "40ce869d-e032-4ae6-96fe-08167a2e4f57",
+						"type": "text/javascript",
+						"exec": [
+							""
+						]
+					}
+				}
+			]
+		},
+		{
+			"name": "OVSDB",
+			"description": "APIs to build the virtual lab network topology.",
+			"item": [
+				{
+					"name": "Create bridge ovsbr-01 on node srv-01-01",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n \"network-topology:node\": [\n       {\n           \"node-id\": \"ovsdb:srv-01-01/bridge/ovsbr-01\",\n           \"bridge-name\": \"ovsbr-01\",\n           \"ovsdb:bridge-other-configs\": [\n        {\n          \"bridge-other-config-key\": \"disable-in-band\",\n          \"bridge-other-config-value\": \"true\"\n        },\n        {\n          \"bridge-other-config-key\": \"datapath-id\",\n          \"bridge-other-config-value\": \"0000000000000001\"\n        }\n      ],\n      \"ovsdb:stp_enable\": true,\n      \"ovsdb:protocol-entry\": [\n        {\n          \"protocol\": \"ovsdb:ovsdb-bridge-protocol-openflow-13\"\n        }\n       ],            \n      \"controller-entry\": [\n            {\n              \"target\": \"tcp:172.20.254.221:6633\"\n            }\n          ],\n\t\t\"ovsdb:fail-mode\": \"ovsdb:ovsdb-fail-mode-standalone\", \n\t\t\"ovsdb:managed-by\": \"/network-topology:network-topology/network-topology:topology[network-topology:topology-id='ovsdb:1']/network-topology:node[network-topology:node-id='ovsdb:srv-01-01']\"            \n       }\n   ]\n}"
+						},
+						"url": {
+							"raw": "{{odl-01-cfg}}/network-topology:network-topology/topology/ovsdb:1/network-topology:node/ovsdb:srv-01-01%2Fbridge%2Fovsbr-01",
+							"host": [
+								"{{odl-01-cfg}}"
+							],
+							"path": [
+								"network-topology:network-topology",
+								"topology",
+								"ovsdb:1",
+								"network-topology:node",
+								"ovsdb:srv-01-01%2Fbridge%2Fovsbr-01"
+							]
+						},
+						"description": "Requests that the controller create bridge ovsbr-01 on node srv-01-01. The node is preconfigured to connect to the controller with ovs-vsctl set-manager 172.20.254.220:6640. In the URL, %2F represents \"/\"."
+					},
+					"response": []
+				},
+				{
+					"name": "Create bridge ovsbr-02 on node srv-02-01",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n \"network-topology:node\": [\n       {\n           \"node-id\": \"ovsdb:srv-02-01/bridge/ovsbr-02\",\n           \"bridge-name\": \"ovsbr-02\",\n           \"ovsdb:bridge-other-configs\": [\n        {\n          \"bridge-other-config-key\": \"disable-in-band\",\n          \"bridge-other-config-value\": \"true\"\n        },\n        {\n          \"bridge-other-config-key\": \"datapath-id\",\n          \"bridge-other-config-value\": \"0000000000000002\"\n        },\n        {\n          \"bridge-other-config-key\": \"datapath-type\",\n          \"bridge-other-config-value\": \"datapath-type-system\"\n        },\n        {\n          \"bridge-other-config-key\": \"datapath-type\",\n          \"bridge-other-config-value\": \"datapath-type-system\"\n        }\n      ],\n      \"ovsdb:stp_enable\": true,\n      \"ovsdb:protocol-entry\": [\n        {\n          \"protocol\": \"ovsdb:ovsdb-bridge-protocol-openflow-13\"\n        }\n      ],            \n      \"controller-entry\": [\n            {\n              \"target\": \"tcp:172.20.254.221:6633\"\n            }\n          ],\n       \"ovsdb:fail-mode\": \"ovsdb:ovsdb-fail-mode-standalone\", \n      \"ovsdb:managed-by\": \"/network-topology:network-topology/network-topology:topology[network-topology:topology-id='ovsdb:1']/network-topology:node[network-topology:node-id='ovsdb:srv-02-01']\"            \n       }\n   ]\n}"
+						},
+						"url": {
+							"raw": "{{odl-01-cfg}}/network-topology:network-topology/topology/ovsdb:1/network-topology:node/ovsdb:srv-02-01%2Fbridge%2Fovsbr-02",
+							"host": [
+								"{{odl-01-cfg}}"
+							],
+							"path": [
+								"network-topology:network-topology",
+								"topology",
+								"ovsdb:1",
+								"network-topology:node",
+								"ovsdb:srv-02-01%2Fbridge%2Fovsbr-02"
+							]
+						},
+						"description": "Requests that the controller create bridge ovsbr-02 on node srv-02-01. The node is preconfigured to connect to the controller with ovs-vsctl set-manager 172.20.254.220:6640. In the URL, %2F represents \"/\"."
+					},
+					"response": []
+				},
+				{
+					"name": "Create bridge ovsbr-03 on node srv-03-01",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n \"network-topology:node\": [\n       {\n           \"node-id\": \"ovsdb:srv-03-01/bridge/ovsbr-03\",\n           \"bridge-name\": \"ovsbr-03\",\n           \"ovsdb:bridge-other-configs\": [\n        {\n          \"bridge-other-config-key\": \"disable-in-band\",\n          \"bridge-other-config-value\": \"true\"\n        },\n        {\n          \"bridge-other-config-key\": \"datapath-id\",\n          \"bridge-other-config-value\": \"0000000000000003\"\n        },\n        {\n          \"bridge-other-config-key\": \"datapath-type\",\n          \"bridge-other-config-value\": \"datapath-type-system\"\n        }\n      ],\n      \"ovsdb:stp_enable\": true,\n      \"ovsdb:protocol-entry\": [\n        {\n          \"protocol\": \"ovsdb:ovsdb-bridge-protocol-openflow-13\"\n        }\n       ],            \n      \"controller-entry\": [\n            {\n              \"target\": \"tcp:172.20.254.221:6633\"\n            }\n          ],\n\t\t\"ovsdb:fail-mode\": \"ovsdb:ovsdb-fail-mode-standalone\", \n\t    \"ovsdb:managed-by\": \"/network-topology:network-topology/network-topology:topology[network-topology:topology-id='ovsdb:1']/network-topology:node[network-topology:node-id='ovsdb:srv-03-01']\"      \n       }\n   ]\n}"
+						},
+						"url": {
+							"raw": "{{odl-01-cfg}}/network-topology:network-topology/topology/ovsdb:1/network-topology:node/ovsdb:srv-03-01%2Fbridge%2Fovsbr-03",
+							"host": [
+								"{{odl-01-cfg}}"
+							],
+							"path": [
+								"network-topology:network-topology",
+								"topology",
+								"ovsdb:1",
+								"network-topology:node",
+								"ovsdb:srv-03-01%2Fbridge%2Fovsbr-03"
+							]
+						},
+						"description": "Requests that the controller create bridge ovsbr-03 on node srv-03-01. The node is preconfigured to connect to the controller with ovs-vsctl set-manager 172.20.254.220:6640. In the URL, %2F represents \"/\"."
+					},
+					"response": []
+				},
+				{
+					"name": "Create bridge ovsbr-04 on node srv-04-01",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n \"network-topology:node\": [\n       {\n           \"node-id\": \"ovsdb:srv-04-01/bridge/ovsbr-04\",\n           \"bridge-name\": \"ovsbr-04\",\n           \"ovsdb:bridge-other-configs\": [\n        {\n          \"bridge-other-config-key\": \"disable-in-band\",\n          \"bridge-other-config-value\": \"true\"\n        },\n        {\n          \"bridge-other-config-key\": \"datapath-id\",\n          \"bridge-other-config-value\": \"0000000000000004\"\n        },\n        {\n          \"bridge-other-config-key\": \"datapath-type\",\n          \"bridge-other-config-value\": \"datapath-type-system\"\n        }\n      ],\n      \"ovsdb:stp_enable\": true,\n      \"ovsdb:protocol-entry\": [\n        {\n          \"protocol\": \"ovsdb:ovsdb-bridge-protocol-openflow-13\"\n        }\n       ],            \n      \"controller-entry\": [\n            {\n              \"target\": \"tcp:172.20.254.221:6633\"\n            }\n          ],\n\t\t\"ovsdb:fail-mode\": \"ovsdb:ovsdb-fail-mode-standalone\", \n\t\t\"ovsdb:managed-by\": \"/network-topology:network-topology/network-topology:topology[network-topology:topology-id='ovsdb:1']/network-topology:node[network-topology:node-id='ovsdb:srv-04-01']\"            \n       }\n   ]\n}"
+						},
+						"url": {
+							"raw": "{{odl-01-cfg}}/network-topology:network-topology/topology/ovsdb:1/network-topology:node/ovsdb:srv-04-01%2Fbridge%2Fovsbr-04",
+							"host": [
+								"{{odl-01-cfg}}"
+							],
+							"path": [
+								"network-topology:network-topology",
+								"topology",
+								"ovsdb:1",
+								"network-topology:node",
+								"ovsdb:srv-04-01%2Fbridge%2Fovsbr-04"
+							]
+						},
+						"description": "Requests that the controller create bridge ovsbr-04 on node srv-04-01. The node is preconfigured to connect to the controller with ovs-vsctl set-manager 172.20.254.220:6640. In the URL, %2F represents \"/\"."
+					},
+					"response": []
+				},
+				{
+					"name": "Add ports to bridge ovsbr-01 on node srv-01-01",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"network-topology:termination-point\": [\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1001\",\r\n      \"tp-id\": \"tap1001\",\r\n      \"trunks\": [\r\n              {\r\n               \"trunk\":3500\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1001\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1002\",\r\n      \"tp-id\": \"tap1002\",\r\n      \"trunks\": [\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1002\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1003\",\r\n      \"tp-id\": \"tap1003\",\r\n      \"trunks\": [\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1003\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1004\",\r\n      \"tp-id\": \"tap1004\",\r\n      \"trunks\": [\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1004\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1005\",\r\n      \"tp-id\": \"tap1005\",\r\n      \"trunks\": [\r\n      \t\t  {\r\n               \"trunk\":3500\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1005\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1006\",\r\n      \"tp-id\": \"tap1006\",\r\n      \"trunks\": [\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1006\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1007\",\r\n      \"tp-id\": \"tap1007\",\r\n      \"trunks\": [\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1007\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1008\",\r\n      \"tp-id\": \"tap1008\",\r\n      \"trunks\": [\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1008\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1009\",\r\n      \"tp-id\": \"tap1009\",\r\n      \"trunks\": [\r\n              {\r\n               \"trunk\":3500\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1009\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1010\",\r\n      \"tp-id\": \"tap1010\",\r\n      \"trunks\": [\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1010\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1011\",\r\n      \"tp-id\": \"tap1011\",\r\n      \"trunks\": [\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1011\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap10012\",\r\n      \"tp-id\": \"tap1012\",\r\n      \"trunks\": [\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1012\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1013\",\r\n      \"tp-id\": \"tap1013\",\r\n      \"trunks\": [\r\n              {\r\n               \"trunk\":3500\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1013\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1014\",\r\n      \"tp-id\": \"tap1014\",\r\n      \"trunks\": [\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1014\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1015\",\r\n      \"tp-id\": \"tap1015\",\r\n      \"trunks\": [\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1015\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1016\",\r\n      \"tp-id\": \"tap1016\",\r\n      \"trunks\": [\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1016\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1017\",\r\n      \"tp-id\": \"tap1017\",\r\n      \"trunks\": [\r\n              {\r\n               \"trunk\":3500\r\n              },\r\n              {\r\n               \"trunk\":3501\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1017\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1018\",\r\n      \"tp-id\": \"tap1018\",\r\n      \"trunks\": [\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1018\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1019\",\r\n      \"tp-id\": \"tap1019\",\r\n      \"trunks\": [\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1019\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1020\",\r\n      \"tp-id\": \"tap1020\",\r\n      \"trunks\": [\r\n              {\r\n               \"trunk\":3513\r\n              },\r\n               {\r\n               \"trunk\":3514\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1020\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1021\",\r\n      \"tp-id\": \"tap1021\",\r\n      \"trunks\": [\r\n              {\r\n               \"trunk\":3500\r\n              },\r\n               {\r\n               \"trunk\":3501\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1021\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1022\",\r\n      \"tp-id\": \"tap1022\",\r\n      \"trunks\": [\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1022\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1023\",\r\n      \"tp-id\": \"tap1023\",\r\n      \"trunks\": [\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1023\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1024\",\r\n      \"tp-id\": \"tap1024\",\r\n      \"trunks\": [\r\n              {\r\n               \"trunk\":3515\r\n              },\r\n               {\r\n               \"trunk\":3516\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1024\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1025\",\r\n      \"tp-id\": \"tap1025\",\r\n      \"trunks\": [\r\n              {\r\n               \"trunk\":3500\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1025\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1026\",\r\n      \"tp-id\": \"tap1026\",\r\n      \"trunks\": [\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1026\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1027\",\r\n      \"tp-id\": \"tap1027\",\r\n      \"trunks\": [\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1027\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1028\",\r\n      \"tp-id\": \"tap1028\",\r\n      \"trunks\": [\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1028\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1029\",\r\n      \"tp-id\": \"tap1029\",\r\n      \"trunks\": [\r\n              {\r\n               \"trunk\":3500\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1029\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1030\",\r\n      \"tp-id\": \"tap1030\",\r\n      \"trunks\": [\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1030\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1031\",\r\n      \"tp-id\": \"tap1031\",\r\n      \"trunks\": [\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1031\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1032\",\r\n      \"tp-id\": \"tap1032\",\r\n      \"trunks\": [\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1032\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1033\",\r\n      \"tp-id\": \"tap1033\",\r\n      \"trunks\": [\r\n              {\r\n               \"trunk\":3500\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1033\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1034\",\r\n      \"tp-id\": \"tap1034\",\r\n      \"trunks\": [\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1034\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1035\",\r\n      \"tp-id\": \"tap1035\",\r\n      \"trunks\": [\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1035\r\n    },\r\n    {\r\n  \r\n      \"ovsdb:name\": \"tap1036\",\r\n      \"tp-id\": \"tap1036\",\r\n      \"vlan-tag\": \"3511\",\r\n      \"vlan-mode\":\"access\",\r\n      \"ofport_request\": 1036\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1037\",\r\n      \"tp-id\": \"tap1037\",\r\n      \"trunks\": [\r\n              {\r\n               \"trunk\":3500\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1037\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1038\",\r\n      \"tp-id\": \"tap1038\",\r\n      \"trunks\": [\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1038\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1039\",\r\n      \"tp-id\": \"tap1039\",\r\n      \"trunks\": [\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1039\r\n    },\r\n    {\r\n  \r\n      \"ovsdb:name\": \"tap1040\",\r\n      \"tp-id\": \"tap1040\",\r\n      \"vlan-tag\": \"3512\",\r\n      \"vlan-mode\":\"access\",\r\n      \"ofport_request\": 1040\r\n    },\r\n    {\r\n      \"ovsdb:name\": \"ens36\",\r\n      \"tp-id\": \"ens36\",\r\n     \"trunks\": [\r\n              {\r\n               \"trunk\":3501\r\n              },\r\n               {\r\n               \"trunk\":3511\r\n              },\r\n              {\r\n               \"trunk\":3512\r\n              },\r\n              {\r\n               \"trunk\":3513\r\n              },\r\n              {\r\n               \"trunk\":3514\r\n              },\r\n              {\r\n               \"trunk\":3515\r\n              },\r\n              {\r\n               \"trunk\":3516\r\n              }\r\n              \r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 36\r\n    },\r\n    {      \r\n           \"tp-id\":\"vxlan1\",\r\n           \"ovsdb:name\": \"vxlan1\",\r\n           \"osdb:interface-type\": \"ovsdb:interface-type-vxlan\",\r\n           \"ofport_request\": 901,\r\n           \"trunks\": [\r\n              {\r\n               \"trunk\":3501\r\n              }\r\n             ],\r\n           \"vlan-mode\":\"native-tagged\",\r\n          \"ovsdb:options\": [\r\n            \r\n            {\r\n              \"ovsdb:option\": \"key\",\r\n              \"ovsdb:value\": \"flow\"\r\n            },\r\n            {\r\n              \"ovsdb:option\": \"local_ip\",\r\n              \"ovsdb:value\": \"10.1.1.1\"\r\n            },\r\n            {\r\n              \"ovsdb:option\": \"remote_ip\",\r\n              \"ovsdb:value\": \"10.1.1.2\"\r\n            }\r\n          ]\r\n        },\r\n        {      \r\n           \"tp-id\":\"vxlan2\",\r\n           \"ovsdb:name\": \"vxlan2\",\r\n           \"osdb:interface-type\": \"ovsdb:interface-type-vxlan\",\r\n           \"ofport_request\": 902,\r\n           \"trunks\": [\r\n              {\r\n               \"trunk\":3501\r\n              }\r\n             ],\r\n           \"vlan-mode\":\"native-tagged\",\r\n          \"ovsdb:options\": [\r\n            \r\n            {\r\n              \"ovsdb:option\": \"key\",\r\n              \"ovsdb:value\": \"flow\"\r\n            },\r\n            {\r\n              \"ovsdb:option\": \"local_ip\",\r\n              \"ovsdb:value\": \"10.1.1.1\"\r\n            },\r\n            {\r\n              \"ovsdb:option\": \"remote_ip\",\r\n              \"ovsdb:value\": \"10.1.1.3\"\r\n            }\r\n          ]\r\n        },\r\n        {      \r\n           \"tp-id\":\"vxlan3\",\r\n           \"ovsdb:name\": \"vxlan3\",\r\n           \"osdb:interface-type\": \"ovsdb:interface-type-vxlan\",\r\n           \"ofport_request\": 903,\r\n           \"trunks\": [\r\n              {\r\n               \"trunk\":3501\r\n              }\r\n             ],\r\n           \"vlan-mode\":\"native-tagged\",\r\n          \"ovsdb:options\": [\r\n            \r\n            {\r\n              \"ovsdb:option\": \"key\",\r\n              \"ovsdb:value\": \"flow\"\r\n            },\r\n            {\r\n              \"ovsdb:option\": \"local_ip\",\r\n              \"ovsdb:value\": \"10.1.1.1\"\r\n            },\r\n            {\r\n              \"ovsdb:option\": \"remote_ip\",\r\n              \"ovsdb:value\": \"10.1.1.4\"\r\n            }\r\n          ]\r\n        }\r\n  ]\r\n}\r\n\r\n\r\n"
+						},
+						"url": {
+							"raw": "{{odl-01-cfg}}/network-topology:network-topology/topology/ovsdb:1/node/ovsdb:srv-01-01%2Fbridge%2Fovsbr-01",
+							"host": [
+								"{{odl-01-cfg}}"
+							],
+							"path": [
+								"network-topology:network-topology",
+								"topology",
+								"ovsdb:1",
+								"node",
+								"ovsdb:srv-01-01%2Fbridge%2Fovsbr-01"
+							]
+						},
+						"description": "Adds the required physical and virtual interfaces to bridge ovsbr-01 on node srv-01-01."
+					},
+					"response": []
+				},
+				{
+					"name": "Add ports to bridge ovsbr-02 on node srv-02-01",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"network-topology:termination-point\": [\r\n    {      \r\n           \"tp-id\":\"vxlan1\",\r\n           \"ovsdb:name\": \"vxlan1\",\r\n           \"osdb:interface-type\": \"ovsdb:interface-type-vxlan\",\r\n           \"ofport_request\": 901,\r\n           \"trunks\": [\r\n              {\r\n               \"trunk\":3501\r\n              }\r\n             ],\r\n           \"vlan-mode\":\"native-tagged\",\r\n          \"ovsdb:options\": [\r\n            \r\n            {\r\n              \"ovsdb:option\": \"key\",\r\n              \"ovsdb:value\": \"flow\"\r\n            },\r\n            {\r\n              \"ovsdb:option\": \"local_ip\",\r\n              \"ovsdb:value\": \"10.1.1.2\"\r\n            },\r\n            {\r\n              \"ovsdb:option\": \"remote_ip\",\r\n              \"ovsdb:value\": \"10.1.1.1\"\r\n            }\r\n          ]\r\n        },\r\n        {      \r\n           \"tp-id\":\"vxlan2\",\r\n           \"ovsdb:name\": \"vxlan2\",\r\n           \"osdb:interface-type\": \"ovsdb:interface-type-vxlan\",\r\n           \"ofport_request\": 902,\r\n           \"trunks\": [\r\n              {\r\n               \"trunk\":3501\r\n              }\r\n             ],\r\n           \"vlan-mode\":\"native-tagged\",\r\n          \"ovsdb:options\": [\r\n            \r\n            {\r\n              \"ovsdb:option\": \"key\",\r\n              \"ovsdb:value\": \"flow\"\r\n            },\r\n            {\r\n              \"ovsdb:option\": \"local_ip\",\r\n              \"ovsdb:value\": \"10.1.1.2\"\r\n            },\r\n            {\r\n              \"ovsdb:option\": \"remote_ip\",\r\n              \"ovsdb:value\": \"10.1.1.3\"\r\n            }\r\n          ]\r\n        },\r\n        {      \r\n           \"tp-id\":\"vxlan3\",\r\n           \"ovsdb:name\": \"vxlan3\",\r\n           \"osdb:interface-type\": \"ovsdb:interface-type-vxlan\",\r\n           \"ofport_request\": 903,\r\n           \"trunks\": [\r\n              {\r\n               \"trunk\":3501\r\n              }\r\n             ],\r\n           \"vlan-mode\":\"native-tagged\",\r\n          \"ovsdb:options\": [\r\n            \r\n            {\r\n              \"ovsdb:option\": \"key\",\r\n              \"ovsdb:value\": \"flow\"\r\n            },\r\n            {\r\n              \"ovsdb:option\": \"local_ip\",\r\n              \"ovsdb:value\": \"10.1.1.2\"\r\n            },\r\n            {\r\n              \"ovsdb:option\": \"remote_ip\",\r\n              \"ovsdb:value\": \"10.1.1.4\"\r\n            }\r\n          ]\r\n        }\r\n  ]\r\n}\r\n\r\n\r\n"
+						},
+						"url": {
+							"raw": "{{odl-01-cfg}}/network-topology:network-topology/topology/ovsdb:1/node/ovsdb:srv-02-01%2Fbridge%2Fovsbr-02",
+							"host": [
+								"{{odl-01-cfg}}"
+							],
+							"path": [
+								"network-topology:network-topology",
+								"topology",
+								"ovsdb:1",
+								"node",
+								"ovsdb:srv-02-01%2Fbridge%2Fovsbr-02"
+							]
+						},
+						"description": "Adds the required physical and virtual interfaces to bridge ovsbr-02 on node srv-02-01."
+					},
+					"response": []
+				},
+				{
+					"name": "Add ports to bridge ovsbr-03 on node srv-03-01",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"network-topology:termination-point\": [\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1225\",\r\n      \"tp-id\": \"tap1225\",\r\n      \"trunks\": [\r\n              {\r\n               \"trunk\":3500\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1225\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1226\",\r\n      \"tp-id\": \"tap1226\",\r\n      \"trunks\": [\r\n              {\r\n               \"trunk\":3500\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1226\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1227\",\r\n      \"tp-id\": \"tap1227\",\r\n      \"trunks\": [\r\n              {\r\n               \"trunk\":3500\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1227\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1228\",\r\n      \"tp-id\": \"tap1228\",\r\n      \"trunks\": [\r\n              {\r\n               \"trunk\":3500\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1228\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1229\",\r\n      \"tp-id\": \"tap1229\",\r\n      \"trunks\": [\r\n              {\r\n               \"trunk\":3500\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1229\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1230\",\r\n      \"tp-id\": \"tap1230\",\r\n      \"trunks\": [\r\n              {\r\n               \"trunk\":3500\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1230\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1231\",\r\n      \"tp-id\": \"tap1231\",\r\n      \"trunks\": [\r\n              {\r\n               \"trunk\":3500\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1231\r\n    },\r\n    {\r\n      \r\n      \"ovsdb:name\": \"tap1232\",\r\n      \"tp-id\": \"tap1232\",\r\n      \"trunks\": [\r\n              {\r\n               \"trunk\":3500\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1232\r\n    },\r\n    {\r\n      \"ovsdb:name\": \"tap1233\",\r\n      \"tp-id\": \"tap1233\",\r\n      \"trunks\": [\r\n              {\r\n               \"trunk\":3500\r\n              },\r\n              {\r\n               \"trunk\":3501\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1233\r\n      },\r\n      {\r\n      \"ovsdb:name\": \"tap1237\",\r\n      \"tp-id\": \"tap1237\",\r\n      \"trunks\": [\r\n              {\r\n               \"trunk\":3500\r\n              },\r\n              {\r\n               \"trunk\":3501\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1237\r\n      },\r\n      {\r\n      \"ovsdb:name\": \"tap1241\",\r\n      \"tp-id\": \"tap1241\",\r\n      \"trunks\": [\r\n              {\r\n               \"trunk\":3500\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1241\r\n      },\r\n      {\r\n      \"ovsdb:name\": \"tap1242\",\r\n      \"tp-id\": \"tap1242\",\r\n      \"trunks\": [\r\n              {\r\n               \"trunk\":3500\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1242\r\n      },\r\n      {\r\n      \"ovsdb:name\": \"tap1245\",\r\n      \"tp-id\": \"tap1245\",\r\n      \"trunks\": [\r\n              {\r\n               \"trunk\":3500\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1245\r\n      },\r\n      {\r\n      \"ovsdb:name\": \"tap1246\",\r\n      \"tp-id\": \"tap1246\",\r\n      \"trunks\": [\r\n              {\r\n               \"trunk\":3500\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1246\r\n      },\r\n       {      \r\n           \"tp-id\":\"vxlan1\",\r\n           \"ovsdb:name\": \"vxlan1\",\r\n           \"osdb:interface-type\": \"ovsdb:interface-type-vxlan\",\r\n           \"ofport_request\": 901,\r\n           \"trunks\": [\r\n              {\r\n               \"trunk\":3501\r\n              }\r\n             ],\r\n           \"vlan-mode\":\"native-tagged\",\r\n          \"ovsdb:options\": [\r\n            \r\n            {\r\n              \"ovsdb:option\": \"key\",\r\n              \"ovsdb:value\": \"flow\"\r\n            },\r\n            {\r\n              \"ovsdb:option\": \"local_ip\",\r\n              \"ovsdb:value\": \"10.1.1.3\"\r\n            },\r\n            {\r\n              \"ovsdb:option\": \"remote_ip\",\r\n              \"ovsdb:value\": \"10.1.1.1\"\r\n            }\r\n          ]\r\n        },\r\n        {      \r\n           \"tp-id\":\"vxlan2\",\r\n           \"ovsdb:name\": \"vxlan2\",\r\n           \"osdb:interface-type\": \"ovsdb:interface-type-vxlan\",\r\n           \"ofport_request\": 902,\r\n           \"trunks\": [\r\n              {\r\n               \"trunk\":3501\r\n              }\r\n             ],\r\n           \"vlan-mode\":\"native-tagged\",\r\n          \"ovsdb:options\": [\r\n            \r\n            {\r\n              \"ovsdb:option\": \"key\",\r\n              \"ovsdb:value\": \"flow\"\r\n            },\r\n            {\r\n              \"ovsdb:option\": \"local_ip\",\r\n              \"ovsdb:value\": \"10.1.1.3\"\r\n            },\r\n            {\r\n              \"ovsdb:option\": \"remote_ip\",\r\n              \"ovsdb:value\": \"10.1.1.2\"\r\n            }\r\n          ]\r\n        },\r\n        {      \r\n           \"tp-id\":\"vxlan3\",\r\n           \"ovsdb:name\": \"vxlan3\",\r\n           \"osdb:interface-type\": \"ovsdb:interface-type-vxlan\",\r\n           \"ofport_request\": 903,\r\n           \"trunks\": [\r\n              {\r\n               \"trunk\":3501\r\n              }\r\n             ],\r\n           \"vlan-mode\":\"native-tagged\",\r\n          \"ovsdb:options\": [\r\n            \r\n            {\r\n              \"ovsdb:option\": \"key\",\r\n              \"ovsdb:value\": \"flow\"\r\n            },\r\n            {\r\n              \"ovsdb:option\": \"local_ip\",\r\n              \"ovsdb:value\": \"10.1.1.3\"\r\n            },\r\n            {\r\n              \"ovsdb:option\": \"remote_ip\",\r\n              \"ovsdb:value\": \"10.1.1.4\"\r\n            }\r\n          ]\r\n        }\r\n  ]\r\n}\r\n\r\n\r\n"
+						},
+						"url": {
+							"raw": "{{odl-01-cfg}}/network-topology:network-topology/topology/ovsdb:1/node/ovsdb:srv-03-01%2Fbridge%2Fovsbr-03",
+							"host": [
+								"{{odl-01-cfg}}"
+							],
+							"path": [
+								"network-topology:network-topology",
+								"topology",
+								"ovsdb:1",
+								"node",
+								"ovsdb:srv-03-01%2Fbridge%2Fovsbr-03"
+							]
+						},
+						"description": "Adds the required physical and virtual interfaces to bridge ovsbr-03 on node srv-03-01."
+					},
+					"response": []
+				},
+				{
+					"name": "Add ports to bridge ovsbr-04 on node srv-04-01",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"network-topology:termination-point\": [\r\n    {\r\n      \"ovsdb:name\": \"tap1237\",\r\n      \"tp-id\": \"tap1237\",\r\n      \"trunks\": [\r\n              {\r\n               \"trunk\":3500\r\n              },\r\n              {\r\n               \"trunk\":3501\r\n              }\r\n             ],\r\n      \"vlan-mode\":\"native-tagged\",\r\n      \"ofport_request\": 1237\r\n    },\r\n    {      \r\n           \"tp-id\":\"vxlan1\",\r\n           \"ovsdb:name\": \"vxlan1\",\r\n           \"osdb:interface-type\": \"ovsdb:interface-type-vxlan\",\r\n           \"ofport_request\": 901,\r\n           \"trunks\": [\r\n              {\r\n               \"trunk\":3501\r\n              }\r\n             ],\r\n           \"vlan-mode\":\"native-tagged\",\r\n          \"ovsdb:options\": [\r\n            \r\n            {\r\n              \"ovsdb:option\": \"key\",\r\n              \"ovsdb:value\": \"flow\"\r\n            },\r\n            {\r\n              \"ovsdb:option\": \"local_ip\",\r\n              \"ovsdb:value\": \"10.1.1.4\"\r\n            },\r\n            {\r\n              \"ovsdb:option\": \"remote_ip\",\r\n              \"ovsdb:value\": \"10.1.1.1\"\r\n            }\r\n          ]\r\n        },\r\n        {      \r\n           \"tp-id\":\"vxlan2\",\r\n           \"ovsdb:name\": \"vxlan2\",\r\n           \"osdb:interface-type\": \"ovsdb:interface-type-vxlan\",\r\n           \"ofport_request\": 902,\r\n           \"trunks\": [\r\n              {\r\n               \"trunk\":3501\r\n              }\r\n             ],\r\n           \"vlan-mode\":\"native-tagged\",\r\n          \"ovsdb:options\": [\r\n            \r\n            {\r\n              \"ovsdb:option\": \"key\",\r\n              \"ovsdb:value\": \"flow\"\r\n            },\r\n            {\r\n              \"ovsdb:option\": \"local_ip\",\r\n              \"ovsdb:value\": \"10.1.1.4\"\r\n            },\r\n            {\r\n              \"ovsdb:option\": \"remote_ip\",\r\n              \"ovsdb:value\": \"10.1.1.2\"\r\n            }\r\n          ]\r\n        },\r\n        {      \r\n           \"tp-id\":\"vxlan3\",\r\n           \"ovsdb:name\": \"vxlan3\",\r\n           \"osdb:interface-type\": \"ovsdb:interface-type-vxlan\",\r\n           \"ofport_request\": 903,\r\n           \"trunks\": [\r\n              {\r\n               \"trunk\":3501\r\n              }\r\n             ],\r\n           \"vlan-mode\":\"native-tagged\",\r\n          \"ovsdb:options\": [\r\n            \r\n            {\r\n              \"ovsdb:option\": \"key\",\r\n              \"ovsdb:value\": \"flow\"\r\n            },\r\n            {\r\n              \"ovsdb:option\": \"local_ip\",\r\n              \"ovsdb:value\": \"10.1.1.4\"\r\n            },\r\n            {\r\n              \"ovsdb:option\": \"remote_ip\",\r\n              \"ovsdb:value\": \"10.1.1.3\"\r\n            }\r\n          ]\r\n        }\r\n  ]\r\n}\r\n\r\n\r\n"
+						},
+						"url": {
+							"raw": "{{odl-01-cfg}}/network-topology:network-topology/topology/ovsdb:1/node/ovsdb:srv-04-01%2Fbridge%2Fovsbr-04",
+							"host": [
+								"{{odl-01-cfg}}"
+							],
+							"path": [
+								"network-topology:network-topology",
+								"topology",
+								"ovsdb:1",
+								"node",
+								"ovsdb:srv-04-01%2Fbridge%2Fovsbr-04"
+							]
+						},
+						"description": "Adds the required physical and virtual interfaces to bridge ovsbr-04 on node srv-04-01."
+					},
+					"response": []
+				},
+				{
+					"name": "Get network topology operational data",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "{{odl-01-oper}}/network-topology:network-topology",
+							"host": [
+								"{{odl-01-oper}}"
+							],
+							"path": [
+								"network-topology:network-topology"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get network topology config data",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "{{odl-01-cfg}}/network-topology:network-topology",
+							"host": [
+								"{{odl-01-cfg}}"
+							],
+							"path": [
+								"network-topology:network-topology"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get OVSDB network topology operational data",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "{{odl-01-oper}}/network-topology:network-topology/topology/ovsdb:1",
+							"host": [
+								"{{odl-01-oper}}"
+							],
+							"path": [
+								"network-topology:network-topology",
+								"topology",
+								"ovsdb:1"
+							]
+						},
+						"description": "Requests operational topology data for all OVSDB nodes registered with the controller. The nodes are preconfigured to connect to the controller with ovs-vsctl set-manager 172.20.254.220:6640."
+					},
+					"response": []
+				},
+				{
+					"name": "Get network topology ovsdb config data",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "{{odl-01-cfg}}/network-topology:network-topology/topology/ovsdb:1/",
+							"host": [
+								"{{odl-01-cfg}}"
+							],
+							"path": [
+								"network-topology:network-topology",
+								"topology",
+								"ovsdb:1",
+								""
+							]
+						},
+						"description": "Requests configured topology data for all OVSDB nodes registered with the controller. The nodes are preconfigured to connect to the controller with ovs-vsctl set-manager 172.20.254.220:6640."
+					},
+					"response": []
+				},
+				{
+					"name": "Get operational data for node x",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "{{odl-01-oper}}/network-topology:network-topology/topology/ovsdb:1/node/ovsdb:srv-01-01",
+							"host": [
+								"{{odl-01-oper}}"
+							],
+							"path": [
+								"network-topology:network-topology",
+								"topology",
+								"ovsdb:1",
+								"node",
+								"ovsdb:srv-01-01"
+							]
+						},
+						"description": "\n"
+					},
+					"response": []
+				},
+				{
+					"name": "Get operational data for bridge x on node y",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "{{odl-01-oper}}/network-topology:network-topology/topology/ovsdb:1/node/ovsdb:srv-01-01%2Fbridge%2Fbr-01",
+							"host": [
+								"{{odl-01-oper}}"
+							],
+							"path": [
+								"network-topology:network-topology",
+								"topology",
+								"ovsdb:1",
+								"node",
+								"ovsdb:srv-01-01%2Fbridge%2Fbr-01"
+							]
+						},
+						"description": "\n"
+					},
+					"response": []
+				},
+				{
+					"name": "Get config data for bridge x on node y",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "{{odl-01-cfg}}/network-topology:network-topology/topology/ovsdb:1/node/ovsdb:srv-04-01%2Fbridge%2Fovsbr-04",
+							"host": [
+								"{{odl-01-cfg}}"
+							],
+							"path": [
+								"network-topology:network-topology",
+								"topology",
+								"ovsdb:1",
+								"node",
+								"ovsdb:srv-04-01%2Fbridge%2Fovsbr-04"
+							]
+						},
+						"description": "\n"
+					},
+					"response": []
+				},
+				{
+					"name": "Delete bridge x on node y",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "{{odl-01-cfg}}/network-topology:network-topology/topology/ovsdb:1/node/ovsdb:srv-01-01%2Fbridge%2Fovsbr-01",
+							"host": [
+								"{{odl-01-cfg}}"
+							],
+							"path": [
+								"network-topology:network-topology",
+								"topology",
+								"ovsdb:1",
+								"node",
+								"ovsdb:srv-01-01%2Fbridge%2Fovsbr-01"
+							]
+						},
+						"description": "\n"
+					},
+					"response": []
+				}
+			],
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"id": "a1bddda4-f0de-427e-ad87-b3e9e7314fc9",
+						"type": "text/javascript",
+						"exec": [
+							""
+						]
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"id": "f52c275a-4044-4e81-a7eb-20f78ebfc8e4",
+						"type": "text/javascript",
+						"exec": [
+							""
+						]
+					}
+				}
+			]
+		},
+		{
+			"name": "OpenFlow",
+			"description": "APIs to inspect OpenFlow topology and manage example flows.",
+			"item": [
+				{
+					"name": "Get network topology operational data",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "{{odl-01-oper}}/network-topology:network-topology",
+							"host": [
+								"{{odl-01-oper}}"
+							],
+							"path": [
+								"network-topology:network-topology"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get network topology config data",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "{{odl-01-cfg}}/network-topology:network-topology",
+							"host": [
+								"{{odl-01-cfg}}"
+							],
+							"path": [
+								"network-topology:network-topology"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get node inventory operational state",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "{{odl-01-oper}}/opendaylight-inventory:nodes/",
+							"host": [
+								"{{odl-01-oper}}"
+							],
+							"path": [
+								"opendaylight-inventory:nodes",
+								""
+							]
+						},
+							"description": "Requests operational inventory data from the controller for all OpenFlow nodes."
+					},
+					"response": []
+				},
+				{
+					"name": "Get node inventory config state",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "{{odl-01-cfg}}/opendaylight-inventory:nodes/",
+							"host": [
+								"{{odl-01-cfg}}"
+							],
+							"path": [
+								"opendaylight-inventory:nodes",
+								""
+							]
+						},
+							"description": "Requests configured inventory data from the controller for all OpenFlow switches."
+					},
+					"response": []
+				},
+				{
+					"name": "Get node inventory operational state for openflow:x",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "{{odl-01-oper}}/opendaylight-inventory:nodes/node/openflow:1",
+							"host": [
+								"{{odl-01-oper}}"
+							],
+							"path": [
+								"opendaylight-inventory:nodes",
+								"node",
+								"openflow:1"
+							]
+						},
+							"description": "Requests operational inventory data for a specific OpenFlow node."
+					},
+					"response": []
+				},
+				{
+					"name": "Get table 0 flow data from openflow:x",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "{{odl-01-oper}}/opendaylight-inventory:nodes/node/openflow:1/table/0",
+							"host": [
+								"{{odl-01-oper}}"
+							],
+							"path": [
+								"opendaylight-inventory:nodes",
+								"node",
+								"openflow:1",
+								"table",
+								"0"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get OpenFlow network topology - flow:1",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "{{odl-01-oper}}/network-topology:network-topology/topology/flow:1/",
+							"host": [
+								"{{odl-01-oper}}"
+							],
+							"path": [
+								"network-topology:network-topology",
+								"topology",
+								"flow:1",
+								""
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Push switching flow to OpenFlow node openflow:x",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"flow-node-inventory:flow\": [\r\n    {\r\n      \"id\": \"2\",\r\n      \"cookie_mask\": 255,\r\n      \"installHw\": false,\r\n      \"priority\": 100,\r\n      \"table_id\": 0,\r\n      \"strict\": false,\r\n      \"flow-name\": \"Flow-SWITCH\",\r\n      \"hard-timeout\": 0,\r\n      \"idle-timeout\": 0,\r\n      \"cookie\": 106,\r\n      \"instructions\": {\r\n        \"instruction\": [\r\n          {\r\n            \"order\": 0,\r\n            \"apply-actions\": {\r\n              \"action\": [\r\n                {\r\n                  \"order\": 0,\r\n                  \"output-action\": {\r\n                    \"output-node-connector\": \"NORMAL\",\r\n                    \"max-length\": 60\r\n                  }\r\n                }\r\n              ]\r\n            }\r\n          }\r\n        ]\r\n      }\r\n    }\r\n  ]\r\n}"
+						},
+						"url": {
+							"raw": "{{odl-01-cfg}}/opendaylight-inventory:nodes/node/openflow:1/table/0/flow/2",
+							"host": [
+								"{{odl-01-cfg}}"
+							],
+							"path": [
+								"opendaylight-inventory:nodes",
+								"node",
+								"openflow:1",
+								"table",
+								"0",
+								"flow",
+								"2"
+							]
+						},
+						"description": "Installs a example switching flow on the selected OpenFlow node."
+					},
+					"response": []
+				},
+				{
+					"name": "Push LLDP forwarding flow to OpenFlow node openflow:x",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/xml",
+								"disabled": true
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"flow-node-inventory:flow\": [\n    {\n      \"id\": \"1\",\n      \"cookie_mask\": 255,\n      \"installHw\": false,\n      \"table_id\": 0,\n      \"strict\": false,\n      \"flow-name\": \"LLDP-TO-CTLR\",\n      \"match\": {\n        \"ethernet-match\": {\n          \"ethernet-type\": {\n            \"type\": 35020\n          }\n        }\n      },\n      \"hard-timeout\": 0,\n      \"idle-timeout\": 0,\n      \"cookie\": 108,\n      \"instructions\": {\n        \"instruction\": [\n          {\n            \"order\": 0,\n            \"apply-actions\": {\n              \"action\": [\n                {\n                  \"order\": 0,\n                  \"output-action\": {\n                    \"output-node-connector\": \"CONTROLLER\",\n                    \"max-length\": 65535\n                  }\n                }\n              ]\n            }\n          }\n        ]\n      }\n    }\n  ]\n}"
+						},
+						"url": {
+							"raw": "{{odl-01-cfg}}/opendaylight-inventory:nodes/node/openflow:1/table/0/flow/1",
+							"host": [
+								"{{odl-01-cfg}}"
+							],
+							"path": [
+								"opendaylight-inventory:nodes",
+								"node",
+								"openflow:1",
+								"table",
+								"0",
+								"flow",
+								"1"
+							]
+						},
+						"description": "Installs a example flow that forwards LLDP frames from the selected OpenFlow node to the controller."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete switching flow from OpenFlow node openflow:x",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							},
+							{
+								"key": "Accept",
+								"value": "application/xml"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/xml"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "{{odl-01-cfg}}/opendaylight-inventory:nodes/node/openflow:1/table/0/flow/2",
+							"host": [
+								"{{odl-01-cfg}}"
+							],
+							"path": [
+								"opendaylight-inventory:nodes",
+								"node",
+								"openflow:1",
+								"table",
+								"0",
+								"flow",
+								"2"
+							]
+						},
+						"description": "Removes the example switching flow from the selected OpenFlow node."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete LLDP forwarding flow from OpenFlow node openflow:x",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "{{odl_basic_auth}}"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/xml"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/xml"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "{{odl-01-cfg}}/opendaylight-inventory:nodes/node/openflow:1/table/0/flow/1",
+							"host": [
+								"{{odl-01-cfg}}"
+							],
+							"path": [
+								"opendaylight-inventory:nodes",
+								"node",
+								"openflow:1",
+								"table",
+								"0",
+								"flow",
+								"1"
+							]
+						},
+						"description": "Removes the example LLDP forwarding flow from the selected OpenFlow node."
+					},
+					"response": []
+				}
+			],
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"id": "d2364c07-e2da-48b5-8ae7-7d4f7240ed41",
+						"type": "text/javascript",
+						"exec": [
+							""
+						]
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"id": "c035c0ec-c12a-4d30-92c1-3f840662d85d",
+						"type": "text/javascript",
+						"exec": [
+							""
+						]
+					}
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"id": "c1fb330f-0f91-4290-b019-2b77a43bc3e6",
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"id": "13525c9b-bcc3-4130-a790-8026c2655346",
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "odl_basic_auth",
+			"value": "Basic <set-in-your-local-environment>",
+			"type": "string",
+			"description": "RESTCONF Authorization header value. Set this in your local Postman environment, for example Basic <base64 username:password>. Do not commit real controller credentials."
+		}
+	]
+}

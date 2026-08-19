@@ -1,0 +1,4 @@
+#!/bin/sh
+switch='br-mgmt0'
+/sbin/ifconfig "$1" 0.0.0.0 down
+brctl delif "${switch}" "$1"

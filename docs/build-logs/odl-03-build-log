@@ -1,0 +1,64 @@
+
+# Steps to build and run odl-03 docker container on prod-01 server . This container run BGP southbound plugin. We use odl-03 to set up BGP with the route reflectors.
+#It is assumed that prod-01 has docker installed and the docker image and networks have been created. See prod-01-build-log file for more details.
+# odl-03 will be used to interact with route reflectors using southbound bgp and pcep plugins..We will launch the container, attach them to appropriate networks,  and install required ODL packages.
+
+# Verify that the odl docker image - odl:oxygen-k081 exists
+
+sudo docker image ls -a
+
+# Create odl-03 container and attach it to the mgmt network. --cap-add NET_ADMIN permits container network config to be changed from inside 
+# the container.
+sudo docker run --cap-add NET_ADMIN -itd --name odl-03  --network=net-172-20-254-23 --ip 172.20.254.189 --hostname odl-03 --dns 8.8.8.8 odl:oxygen-k081
+
+# Attach the remaining networks to the container
+sudo docker network connect --ip 10.99.201.9  net-10-99-201-24 odl-03
+sudo docker network connect --ip 10.99.202.9  net-10-99-202-24 odl-03
+
+
+# Verify the container is running
+sudo docker container  ls -a
+sudo docker inspect odl-03
+
+# Set default gateway if required and verify basic connectivity
+sudo docker exec -it odl-03 bash
+ifconfig
+ip route 
+ip route del default
+ip route add default via 172.20.254.1 pref high metric 0
+ping 172.20.254.1
+ping 4.2.2.2
+ping 10.99.201.1
+ping 10.99.202.1
+top
+
+
+# verify ssh access to the container 
+ssh root@172.20.254.189
+
+# odl karaf ssh shell listens by default on port 8101. It can be accessed in two ways. 
+#  1. SSH to the container and connect locally
+	ssh root@172.20.254.189
+        run the client script -  /opt/odl-nitrogen/bin/client 
+	
+# 2. Remotely by using SSH to odl karaf directly on port 8101. Use the locally configured Karaf credentials.
+	
+	ssh karaf@172.20.254.189 -p 8101
+	
+# Note: use logout or CTRL+D to disconnect from the odl karaf shell.
+
+# We will now install the required southbound plugins from the odl-karaf console.
+# Install ODL dlux core module and basic apps. This will also install northbound restconf
+
+	feature:install odl-dlux-core odl-dluxapps-topology odl-dluxapps-nodes odl-dluxapps-yangui odl-dluxapps-yangutils odl-mdsal-apidocs odl-restconf 
+	
+# Verification: http://172.20.254.189:8181/index.html U:<controller-user> P:<controller-password>
+	
+# Install BGP
+	feature:install odl-bgpcep-bgp
+
+# Install PCEP
+	feature:install odl-bgpcep-pcep
+	
+# Verification: http://localhost:8183/restconf/operational/bgp-rib:bgp-rib
+

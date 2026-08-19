@@ -1,0 +1,119 @@
+This document lists the steps required to build an Ubuntu 16-04.4 server prod-01 to run ODL containers using Docker
+We will prep the server, set up a docker environment and  create  ODL docker images.
+
+## Install Ubuntu 16.04-04 LTS Server Edition with 4 n/w interfaces - ens32,33,34,36
+
+## set up  host network interfaces  - Add the following config to /etc/network/interfaces
+
+	sudo nano /etc/network/interfaces
+
+	# The primary network interface
+	auto ens32
+	iface ens32 inet static
+		address 172.20.254.220
+		netmask 255.255.254.0
+		gateway 172.20.254.1
+		dns-nameservers 8.8.8.8 8.8.4.4
+
+	# This is peer-to-peer data interface 1
+	auto ens33
+	iface ens33 inet manual
+
+	# This is peer-to-peer data interface 2
+	auto ens34
+	iface ens34 inet manual
+	#
+	auto ens36
+	iface ens36 inet manual
+
+## Update packages
+
+	sudo apt-get install
+	sudo apt-get update
+	sudo apt-get install wireshark wget curl
+
+# Follow the instructions to install docker- https://docs.docker.com/install/linux/docker-ce/ubuntu/#upgrade-docker-ce
+
+# The next step is to create docker images using a base debian image. We set up the images to run ssh server and odl-karaf.
+# We use a tool called supervisor to run multiple processes in a container. The container Dockerfile will run supervisord process to  
+# launch sshd and odl-karaf processes. 
+
+# We use ODL Nitrogen karaf-0.7.3 to build image - odl:nitrogen-k073
+
+# We use ODL Oxygen karaf-0.8.1 to build image - odl:oxygen-k081
+# We use ODL Oxygen karaf-0.8.2 to build image - odl:oxygen-k082
+# We use ODL Fluorine-SR2 karaf-0.9.2 to build image - odl:fluorine-k092
+# We use ODL Neon karaf-0.10.0 to build image - odl:neon-k0100
+
+# Create  odl image file - odl:nitrogen-k073
+
+create and cd to  /home/lab/projects/docker/img-build/odl/nitrogen/karaf-0.7.3
+copy files from /Dockerfile/odl-nitrogen-k073 to the folder
+sudo docker build -t odl:nitrogen-k073 .
+
+# Create odl image file - odl:oxygen-k081
+
+create and cd to  /home/lab/projects/docker/img-build/odl/oxygen/karaf-0.8.1
+copy files from /Dockerfile/odl-oxygen-k081 to the folder
+sudo docker build -t odl:oxygen-k081 .
+
+# Create odl image file - odl:oxygen-k082
+
+create and cd to  /home/lab/projects/docker/img-build/odl/oxygen/karaf-0.8.2
+copy files from /Dockerfile/odl-oxygen-k082 to the folder
+sudo docker build -t odl:oxygen-k082 .
+
+# Create odl image file - odl:fluorine-k092
+
+create and cd to  /home/lab/projects/docker/img-build/odl/fluorine/karaf-0.9.2
+copy files from /Dockerfile/odl-fluorine-k092 to the folder
+sudo docker build -t odl:fluorine-k092 .
+
+# Create  odl image file - odl:neon-k0100
+
+create and cd to /home/lab/projects/docker/img-build/odl/neon/karaf-0.10.0
+copy files from /Dockerfile/odl-neon-k0100 to the folder
+sudo docker build -t odl:neon-k0100 .
+
+# Create  odl image file - odl:neon-k0100
+
+cd to  /home/lab/projects/docker/img-build/odl/neon/karaf-0.10.0
+Create a Dockerfile and copy the contents of Dockerfile-odl-neon-k0100 to it.
+create sshd_config and copy contents of sshd_config-odl-odl-neon-k0100 to it.
+create supervisord.conf and copy contents supervisord.conf-odl-odl-neon-k0100 to it 
+sudo docker build -t odl-neon-k0100 .
+
+# Build docker network environment # 
+
+### We will be creating 3 docker networks, net-172-20-254-23 will connect to the lab mgmt network. 
+### net-10-99-201-24 and net-10-99-202-24 are used to connect with the backbone RRRs
+### We will be using docker network type - macvlan so that the containers can communicate with the network natively.
+## We restrict the ip range for the networks to a single ip to prevent dynamic ip assignments to containers.
+## We manually assign container ip addresses.
+## It's not possible to  stop docker from assigning gw ip to a container.
+## A docker container can be attached to only one network at the time of creation. More networks can be added later.
+
+
+# Create the  networks 
+
+sudo docker network create -d macvlan  \
+  --subnet=172.20.254.0/23  --ip-range=172.20.254.221/32 --gateway 172.20.254.1 \
+  -o parent=ens32 net-172-20-254-23
+
+# Note: we explicitly set the gw address for the mgmt network.
+
+sudo docker network create -d macvlan  \
+  --subnet=10.99.201.0/24 --ip-range=10.99.201.254/32 \
+  -o parent=ens33 net-10-99-201-24
+
+sudo docker network create -d macvlan  \
+  --subnet=10.99.202.0/24  --ip-range=10.99.202.254/32 \
+  -o parent=ens34 net-10-99-202-24
+  
+# We do not use the gateway option for the net-10 networks. Docker will use the only available ip in the range as the gateway ip for the
+# containers attached to those networks. Docker will configure gateways for all attached networks and one of the default gateways will be used as the GW.
+# Multi-homed containers may require default gw re-configuration to use the correct network.
+# We manually reconfigure the default gateway form multi-homed containers after creation.
+  
+See this link for more information - https://stackoverflow.com/questions/36882945/change-default-route-in-docker-container?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
+

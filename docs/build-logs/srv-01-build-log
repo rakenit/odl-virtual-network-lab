@@ -1,0 +1,811 @@
+## Building a host - srv-01 ##
+
+## It is assumed that the server will be built on hardware that supports guest OS hardware acceleration and virtualization.
+
+## Follow the below steps if you are building the server as a VM in an ESX environment ##
+
+# Log in to vCenter. Preferably, select an ESXi 5.1 host that supports both host and guest OS CPU virtualization.
+# Host CPU hardware virtualization support is enabled in BIOS. Hardware virtualization support for a guest OS on an ESXi host is enabled by checking the "hardware virt support - Expose hardware assisted Virtualization to the guest OS" option under "Customize Hardware->CPU"
+# in the web vCenter client during the VM build. This option is not available in the regular vCenter client and is greyed out if the ESXi host CPU does not support guest OS CPU hardware virtualization.
+#
+
+#VM Specs
+#Name: srv-01
+##Type: Ubuntu 64 bit
+#CPU:24. Number of virtual sockets: 24, number of cores per socket: 1. Total cores: 24.
+#Memory:96 Gig
+#NIC:5
+# Harddisk:256GB
+
+Install Ubuntu 16.04 Server with OpenSSH server.
+
+# Install & Update packages
+	
+	sudo apt-get install
+	sudo apt-get update
+	sudo apt-get install wireshark wget curl bridge-utils
+
+ 
+# Initialize phy interfaces and Set up bridge network for mgmt.
+# Note: auto<if> and iface <if> inet manual brings up interface automatically
+
+sudo nano /etc/network/interfaces
+
+auto ens32 <-- To lab mgmt network
+ iface ens32 inet manual
+
+
+auto ens33   <- underlay to communicate with other hosts
+iface ens33 inet static
+  address 10.1.1.1
+  netmask 255.255.255.0
+
+
+auto ens34 
+iface ens34 inet manual
+
+auto ens35 .
+iface ens35 inet manual
+
+auto ens36 
+iface ens36 inet manual
+
+
+# Auto create br-mgmt0. add mgmt interface - ens32. This also automatically creates and brings br-mgmt0 interface up
+
+auto br-mgmt0   <- mgmt bridge for host
+iface br-mgmt0 inet static
+	address 172.20.254.224
+	netmask 255.255.254.0
+	gateway 172.20.254.1
+	dns-nameservers 8.8.8.8 4.4.4.4
+#   static route example
+#	post-up route add -net 10.0.0.0 netmask 255.0.0.0 gw 10.18.44.1	
+	bridge_ports ens32 
+	bridge_stp off
+	bridge_fd 0
+	bridge_maxwait 0
+
+Install openvswitch-2.9.2
+
+# Install dependencies
+
+sudo apt-get install git python-simplejson python python-qt4 python-twisted-conch automake autoconf gcc uml-utilities libtool build-essential git libssl-dev pkg-config linux-headers-`uname -r`
+
+# Compile, build, and install Open vSwitch 2.9.2
+cd ~/Downloads/openvswitch
+wget http://openvswitch.org/releases/openvswitch-2.9.2.tar.gz
+tar xvzf openvswitch-2.9.2.tar.gz openvswitch-2.9.2
+cd openvswitch-2.9.2/
+./boot.sh
+./configure
+
+### By default all files are installed under ``/usr/local``. Open vSwitch also
+expects to find its database in ``/usr/local/etc/openvswitch`` by default.###
+
+make
+sudo make install
+### This will install the executables and manpages into the running system, by default under ``/usr/local/bin ###
+
+## load openvswitch module into kernel ###
+sudo modprobe openvswitch
+## verify that the module is loaded ##
+lsmod  | grep openvswitch
+
+
+
+##Starting openvswitch ##
+--------
+
+Before starting ovs-vswitchd itself, you need to start its configuration
+database, ovsdb-server. Each machine on which Open vSwitch is installed should
+run its own copy of ovsdb-server. Before ovsdb-server itself can be started,
+configure a database that it can use::
+
+       sudo  mkdir -p /usr/local/etc/openvswitch
+       sudo ovsdb-tool create /usr/local/etc/openvswitch/conf.db \
+           vswitchd/vswitch.ovsschema
+
+
+# Create a log file 
+	cd /usr/local/var, mkdir log , cd log,mkdir openvswitch,cd openvswitch, touch ovsdb-server.log
+	
+Configure ovsdb-server to use database created above, to listen on a Unix
+domain socket, to connect to any managers specified in the database itself, and
+to use the SSL configuration in the database::
+
+    sudo mkdir -p /usr/local/var/run/openvswitch
+    sudo  ovsdb-server --remote=punix:/usr/local/var/run/openvswitch/db.sock \
+        --remote=db:Open_vSwitch,Open_vSwitch,manager_options \
+        --private-key=db:Open_vSwitch,SSL,private_key \
+        --certificate=db:Open_vSwitch,SSL,certificate \
+        --bootstrap-ca-cert=db:Open_vSwitch,SSL,ca_cert \
+        --pidfile --detach --log-file
+
+.. note::
+  If you built Open vSwitch without SSL support, then omit ``--private-key``,
+  ``--certificate``, and ``--bootstrap-ca-cert``.)
+
+Initialize the database using ovs-vsctl. This is only necessary the first time
+after you create the database with ovsdb-tool, though running it at any time is
+harmless::
+
+    sudo ovs-vsctl --no-wait init
+
+Start the main Open vSwitch daemon, telling it to connect to the same Unix
+domain socket::
+
+    sudo  ovs-vswitchd --pidfile --detach --log-file
+
+# Validating
+ 
+	sudo ovs-vsctl --version
+	sudo ovs-vsctl show
+
+
+	 sudo ovs-vsctl add-br br0
+     sudo ovs-vsctl add-port br0 eth0
+	 
+	 
+!!!!! Register node with ODL for OVSDB . This is called passive mode in ODL!!!!
+
+# ODL uses the opendaylight-iid value as the OVSDB node ID when a node registers with it. The opendaylight-iid key/value pair is available in the external-id column of the open_vswitch table on the node. 
+# If opendaylight-iid key/value pair is not configured , odl uses uuid as the node id. We set this value to srv-01-01 to help with CRUD  operations. In case of active mode where ODL initiates the connection to the Open vSwitch  , it will
+# automatically set opendaylight-iid key value so that it can use node id.
+
+# Check to ensure that  opendaylight-iid is not set
+
+sudo ovs-vsctl list open_vswitch
+
+# Now restart  openvswitch by setting opendaylight-iid and system-id.  We set system-id to random , which generates a random number to uniquely id the openvswitch instance on the node.
+
+ sudo /usr/local/share/openvswitch/scripts/ovs-ctl restart --system-id=random  \
+ --external-id="opendaylight-iid=/network-topology:network-topology/network-topology:topology[network-topology:topology-id='ovsdb:1']/network-topology:node[network-topology:node-id='ovsdb:srv-01-01']"
+
+
+#Verify
+
+sudo ovs-vsctl list open_vswitch
+
+# set the node  to connect to the odl for mgmt via OVSDB
+
+	 sudo ovs-vsctl set-manager tcp:172.20.254.221:6640
+	 
+#Verify in ODL using REST that  the node is connected.
+
+sudo ovs-vsctl show
+
+# Add the following to /etc/rc.local/ to ensure that openvswitch starts after reboot.
+
+ sudo /usr/local/share/openvswitch/scripts/ovs-ctl start --system-id=random  \
+ --external-id="opendaylight-iid=/network-topology:network-topology/network-topology:topology[network-topology:topology-id='ovsdb:1']/network-topology:node[network-topology:node-id='ovsdb:srv-01-01']"
+
+# Load openvswitch kernel module on boot by editing /etc/modules file
+ 
+sudo nano /etc/modules
+	openvswitch
+
+# verification
+lsmod | grep openvswitch
+
+###install qemu 2.8 #####
+
+mkdir ~/Downloads
+cd Downloads
+
+### Get and unzip the source code ###
+wget http://download.qemu-project.org/qemu-2.8.0.tar.xz
+tar -xvf  qemu-2.8.0.tar.xz
+
+### Modify the file that limits the # of NICs ##
+cd qemu-2.8.0
+vi include/net/net.h
+ - At the bottom, change the value of "#define MAX_NICS" to 128
+ - save and exit the file
+
+### Check if KVM is already installed ###
+dpkg --get-selections | grep kvm
+
+### If kvm or qemu-kvm are installed ###
+apt-get remove -y kvm
+apt-get purge -y qemu-kvm
+
+
+### Install libraries necessary to build the package ###
+apt-get install -y libglib2.0-0 libglib2.0-dev libglib2.0-bin libaio1 libaio-dev libcap2 libcap2-bin libcap-ng0 libcap-ng-dev libcap-dev libcurl4-openssl-dev g++ libtool vim sudo vlan uml-utilities nfs-common ifenslave nfs-common make dh-autoreconf libpixman-1-0 bison  libpixman-1-dev
+
+### Setup the build for your machine and install . Select  x86_64-softmmu target to match host arch and speed up install ###
+./configure --prefix=/usr/bin --enable-linux-aio --enable-curl --enable-kvm --target-list=x86_64-softmmu
+make
+sudo make install 
+
+###Executables will end up in /usr/bin/bin.
+Add links to /usr/bin ###
+
+sudo ln -s /usr/bin/bin/qemu-img /usr/bin/
+sudo ln -s /usr/bin/bin/qemu-system-x86_64 /usr/bin/
+sudo ln -s /usr/bin/bin/qemu-nbd /usr/bin/
+sudo ln -s /usr/bin/bin/qemu-ga /usr/bin/
+sudo ln -s /usr/bin/bin/qemu-io /usr/bin/
+
+
+### KVM allows QEMU to use the host hardware-accelerated virtualization capability. The host CPU needs to support it and it needs to be enabled in BIOS.
+ QEMU can still launch VMs without KVM, but things will be slow without hardware acceleration. 
+ 
+ In this scenario, we are using nested virtualization because srv-01 is an Ubuntu VM running on an ESXi 5.1 host. We need to enable nested hardware virtualization support in ESXi for the guest OS during build
+ so that srv-01 can use KVM.
+
+ hardware virtualization support for a guest OS on an ESXi host is enabled by checking the "hardware virt support - Expose hardware assisted Virtualization to the guest OS" option under "Customize Hardware->CPU"
+ in the web vCenter client during VM build. This option is not available in the regular vCenter client and is greyed out if the ESXi host CPU does not
+ support CPU hardware virtualization. 
+ 
+  The ESXi host that srv-01 runs on supports hardware acceleration for guest OS because this option in the web client is not greyed out for the VM. This means that we can use KVM on srv-01 ###
+ 
+ ###
+ 
+### check if kvm and kvm-intel kernel modules are loaded to ensure KVM . If modules are loaded automatically when the hardware supports it modules will be normally loaded during the build#
+
+lsmod | grep kvm
+
+## Note: kvm kernel modules are loaded automatically after reboot.
+
+### If no output, try to add modules ###
+sudo /sbin/modprobe kvm
+sudo /sbin/modprobe kvm-intel 
+# or: sudo /sbin/modprobe kvm-amd
+
+# If modules can't be added or no output , it means that  server does not support hardware virtualization.
+
+## Note: kvm kernel modules are loaded automatically after reboot.
+
+qemu-system-x86_64 --version
+
+Now we set up the qemu environment to launch IOS-XRv, NX-OSv and CSR-1KV routers.
+
+### QEMU can create TAP interfaces but will not bring them up.
+### we use two sets of ifup and ifdown scripts with qemu to bring the tap interfaces up.
+### 1. Use tap-mgmt-up and tap-mgmt-down to bring the management TAP interface up and assign it to the management bridge, br-mgmt0, created earlier.
+### 2. Use tap-data-up and tap-data-down to bring data tap interface up. These interfaces will be used by OpenFlow switches later.
+
+### create tap-mgmt scripts in /home/lab/BBLAB ###
+
+cd /home/lab/BBLAB
+
+nano tap-mgmt-ifup 
+#!/bin/sh
+switch='br-mgmt0'
+/sbin/ifconfig $1 0.0.0.0 up
+brctl addif ${switch} $1
+
+nano tap-mgmt-ifdown
+#!/bin/sh
+switch='br-mgmt0'
+/sbin/ifconfig $1 0.0.0.0 down
+brctl delif ${switch} $1
+
+### create tap-data scripts ###
+nano tap-data-ifup 
+#!/bin/sh
+/sbin/ifconfig $1 0.0.0.0 up
+
+nano tap-data-ifdown
+#!/bin/sh
+/sbin/ifconfig $1 0.0.0.0 down
+
+## Make the scripts executable.
+chmod +x tap-data-ifup tap-data-ifdown tap-mgmt-ifup tap-mgmt-ifdown
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!      Prepare XR Image to boot. We will be using 6.1.2             !!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ 
+cd /home/lab/BBLAB/xr
+### Download IOS-XRv  files from the cisco website  ###
+## The tar file contains .qcow2, ova and .iso files ###
+
+###  Use the .qcow2 file to create a base router image. ### 
+
+Eg: qemu-img create -b xrv9k-fullk9-x-6.1.2.qcow2 -f qcow2 xr6.1.2.qcow2
+
+qemu-img create -b xrv9k-fullk9-x-6.1.2.qcow2 -f qcow2 xrv9k-6.1.2.qcow2
+
+### You can also  create a  .qcow2 and boot using provided iso to create a base router image.###
+
+#Eg: 
+#  sudo qemu-img create -f qcow2 xr6.1.2.qcow2 60G
+#  sudo qemu-system-x86_64  -enable-kvm -daemonize -cpu kvm64  -m 8192M  -display none -rtc base=utc  -hda xr6.1.2.qcow2 \
+# -boot once=d -cdrom /home/lab/BBLAB/xr/xrv9k-fullk9-x-6.1.2.iso \
+# -serial telnet::4008,server,nowait -serial telnet::5008,server,nowait \
+# -pidfile pids/xr6.1.2.pid 
+
+
+### You can also convert vmdk to qcow2 format if vmdk file pre-exists ###
+qemu-img convert <source image name>.vmdk -O qcow2 <new qcow file name>.qcow2
+Example:  Converting iosxrv-k9-lab-6.1.2.vmdk to qcow
+
+     qemu-img convert iosxrv-k9-lab-6.1.2.vmdk -O qcow2 xr6.1.2.qcow2
+
+### Create a test router overlay file r1.qcow2  to launch in KVM ###
+Eg: qemu-img create -b <new qcow file name>.qcow2 -f qcow2 <overlay file name>
+
+    qemu-img create -b xr6.1.2.qcow2 -f qcow2 r1.qcow2
+	
+! Note: overlay file and qcow image must remain in the same folder to launch
+
+Create a PID file in /home/lab/BBLAB/xr/pids directory
+
+touch r1.pid 
+
+!!!!  Test launch a IOS XRv router r1 in qemu .
+
+
+#r1.vlab01
+
+sudo qemu-system-x86_64  -enable-kvm  -daemonize -cpu Westmere  -smp cores=1,threads=1,sockets=1 -m 5120M  -hda /home/lab/BBLAB/xr/r1.qcow2 -name r1,process="r1"  -display none  -rtc base=utc \
+-serial telnet::4000,server,nowait -serial telnet::5000,server,nowait \
+-netdev tap,id=tap0,ifname=tap0,script=/home/lab/BBLAB/tap-mgmt-ifup,downscript=/home/lab/BBLAB/tap-mgmt-ifdown -device e1000,netdev=tap0,mac=00:01:ee:09:00:00 \
+-netdev tap,id=tap1001,ifname=tap1001,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1001,mac=00:01:ee:01:00:01 \
+-netdev tap,id=tap1002,ifname=tap1002,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1002,mac=00:01:ee:01:00:02 \
+-netdev tap,id=tap1003,ifname=tap1003,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1003,mac=00:01:ee:01:00:03 \
+-netdev tap,id=tap1004,ifname=tap1004,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1004,mac=00:01:ee:01:00:04 \
+-pidfile /home/lab/BBLAB/xr/pids/r1.pid
+
+# Verify access to router using console port 4000
+# netstat -anp46|grep qemu
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!         Create  Lab IOSXRv qcow2 images to boot                   !!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+
+### Create overlay files for each router you intend to launch in KVM ##
+
+    qemu-img create -b xrv9k-6.1.2.qcow2 -f qcow2 pe1.qcow2
+	qemu-img create -b xrv9k-6.1.2.qcow2 -f qcow2 pe2qcow2
+	qemu-img create -b xrv9k-6.1.2.qcow2 -f qcow2 pe3.qcow2
+	qemu-img create -b xrv9k-6.1.2.qcow2 -f qcow2 pe4.qcow2
+	qemu-img create -b xrv9k-6.1.2.qcow2 -f qcow2 pe5.qcow2
+	qemu-img create -b xrv9k-6.1.2.qcow2 -f qcow2 pe6.qcow2
+	qemu-img create -b xr6.1.2.qcow2 -f qcow2 p1.qcow2
+	qemu-img create -b xr6.1.2.qcow2 -f qcow2 p2.qcow2
+	qemu-img create -b xr6.1.2.qcow2 -f qcow2 rrr1.qcow2
+	qemu-img create -b xr6.1.2.qcow2 -f qcow2 rrr2.qcow2
+	
+! Repeat for as many routers as you want in the topology
+! Note: overlay file and qcow image must remain in the same folder to launch
+
+
+Create a PID files in /home/lab/BBLAB/xr/pids directory
+
+touch p1.pid  p2.pid  pe1.pid  pe2.pid  pe3.pid  pe4.pid  pe5.pid  pe6.pid  rrr1.pid  rrr2.pid 
+   
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!                    Prepare NXOSv routers to boot                                                            !!!
+!!! Thx to -http://blog.system76.com/post/139138591598/howto-qemu-w-ubuntu-xenial-host-uefi-guest               !!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+cd /home/lab/BBLAB/nxos/9k/703I61
+# install ovfm package for bios support 
+(read NXOSv doc for more details -https://www.cisco.com/c/en/us/td/docs/switches/datacenter/nexus9000/sw/7-x/nx-osv/configuration/guide/b_NX-OSv_9000/b_NX-OSv_chapter_01.html#concept_1C4584D8C8844076BF07A147D3F080AB )
+
+apt-get install ovmf
+# dpkg -L ovmf
+# all VM instances can share the same system-wide, read-only OVMF_CODE.fd file from the ovmf package,
+# but each instance needs a private, writable copy of OVMF_VARS.fd.
+# we create a  copy of the /usr/share/OVMF/OVMF_VARS.fd file from the ovmf package for ce1.
+ 
+cp /usr/share/OVMF/OVMF_VARS.fd /home/lab/BBLAB/nxos/9k/703I61/ce1_OVMF_VARS.fd
+
+# Download nxosv qcow2 file and clone it for ce1
+
+/home/lab/BBLAB/nxos/9k/703I61/qemu-img create -b nxosv-final.703I61.qcow2  -f qcow2 ce1.qcow2
+
+# create pid file
+cd pids
+touch ce1.pid 
+
+# test boot ce1
+
+
+sudo qemu-system-x86_64 -enable-kvm  -daemonize  -cpu Westmere -smp 1,cores=1,threads=1,sockets=1 -m 8192M -name ce1,process="ce1" -display none -rtc base=utc  \
+-drive if=pflash,format=raw,readonly,file=/usr/share/OVMF/OVMF_CODE.fd \
+-drive if=pflash,format=raw,file=/home/lab/BBLAB/nxos/9k/703I61/ce1_OVMF_VARS.fd \
+-device ahci,id=ahci0,bus=pci.0 -drive file=/home/lab/BBLAB/nxos/9k/703I61/ce1,if=none,id=drive-sata-disk0,format=qcow2 \
+-device ide-drive,drive=drive-sata-disk0,bus=ahci0.0,id=hda01 \
+-serial telnet::4012,server,nowait -serial telnet::5012,server,nowait \
+-netdev tap,id=tap12,ifname=tap12,script=/home/lab/BBLAB/tap-mgmt-ifup,downscript=/home/lab/BBLAB/tap-mgmt-ifdown -device e1000,netdev=tap12,id=mgmt0,mac=00:01:ee:09:01:12  \
+-netdev tap,id=tap1061,ifname=tap1061,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1061,id=data0,mac=00:01:ee:01:01:61   \
+-netdev tap,id=tap1062,ifname=tap1062,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1062,id=data1,mac=00:01:ee:01:01:62   \
+-pidfile /home/lab/BBLAB/nxos/9k/703I61/ce1.pid
+
+# if the  device falls into loader> prompt
+#loader> dir to loate the boot file
+boot  nxos.7.0.3.I6.1.bin
+# As soon as you set up your Cisco Nexus 9000v , you need to configure the boot image in your system to avoid dropping to the "loader >" prompt after reload/shut down.
+
+Example:
+
+config t
+
+  boot nxos nxos.7.0.3.I6.1.bin
+
+copy running starting
+
+###
+# Verify access to router using console port 4012
+# netstat -anp46|grep qemu
+
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!              Create  Lab NXOSv qcow2 images to boot                                                        !!!
+!!!                                                                                                             !!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+# Make copies of OVMF_VARS.fd  file for the CEs.
+
+cp /usr/share/OVMF/OVMF_VARS.fd /home/lab/BBLAB/nxos/9k/703I61/ce1_OVMF_VARS.fd
+....
+cp /usr/share/OVMF/OVMF_VARS.fd /home/lab/BBLAB/nxos/9k/703I61/ce8_OVMF_VARS.fd
+## Clone rest of the CEs.
+
+/home/lab/BBLAB/nxos/9k/703I61$qemu-img create -b nxosv-final.703I61.qcow2  -f qcow2 ce1.qcow2
+/home/lab/BBLAB/nxos/9k/703I61$qemu-img create -b nxosv-final.703I61.qcow2  -f qcow2 ce2.qcow2
+/home/lab/BBLAB/nxos/9k/703I61$qemu-img create -b nxosv-final.703I61.qcow2  -f qcow2 ce3.qcow2
+/home/lab/BBLAB/nxos/9k/703I61$qemu-img create -b nxosv-final.703I61.qcow2  -f qcow2 ce4.qcow2
+/home/lab/BBLAB/nxos/9k/703I61$qemu-img create -b nxosv-final.703I61.qcow2  -f qcow2 ce5.qcow2
+/home/lab/BBLAB/nxos/9k/703I61$qemu-img create -b nxosv-final.703I61.qcow2  -f qcow2 ce6.qcow2
+/home/lab/BBLAB/nxos/9k/703I61$qemu-img create -b nxosv-final.703I61.qcow2  -f qcow2 ce7.qcow2
+/home/lab/BBLAB/nxos/9k/703I61$qemu-img create -b nxosv-final.703I61.qcow2  -f qcow2 ce8.qcow2
+
+# Create pid files
+cd pids
+touch ce1.pid ...ce8.pid
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!         Prepare Lab IOSXE csr100v  qcow2 images to boot           !!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+cd /home/lab/BBLAB/crs1000v/16.03.06
+## Download csr1000v-universalk9.16.03.06.iso from the Cisco website####
+# create a base qcow2 file
+/home/lab/BBLAB/crs1000v/16.03.06/qemu-img create csr1000v-16.03.06.qcow2  -f qcow2 8G
+# run qemu with the csr1000v-16.03.06.qcow2 file to boot from cdrom using csr1000v-universalk9.16.03.06.iso . 
+/home/lab/BBLAB/crs1000v/16.03.06/qemu-system-x86_64  -nographic -drive file=csr1000v-16.03.06.qcow2,if=virtio,bus=0,unit=0,cache=none -machine type=pc-1.0,accel=kvm -serial mon:stdio -nographic -nodefconfig -nodefaults -rtc base=utc -cdrom csr1000v-universalk9.16.03.06.iso -boot order=dc  -m 4096
+## When asked to 'hit any key' , choose 3rd option CSR 1000V Serial console and press ENTER.
+## Router will reload after installation is complete. When Press any key to continue prompt appears, hit any key and choose the option ## to select Serial console again BUT DO NOT HIT ENTER after Serial option is selected.
+## press CNTRL a and then c to get to qemu promprt. press quit to exit qemu.
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!!         Create  Lab IOSXE csr100v  qcow2 images to boot           !!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+/home/lab/BBLAB/crs1000v/16.03.06/qemu-img create -b csr1000v-16.03.06.qcow2 -f qcow2 csrv-16.03.06-01.qcow2
+/home/lab/BBLAB/crs1000v/16.03.06/qemu-img create -b csr1000v-16.03.06.qcow2 -f qcow2 csrv-16.03.06-02.qcow2
+
+# Create pid files
+cd pids
+touch csrv-16.03.06-01.pid csrv-16.03.06-02.pid
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!    use script Start-lab-srv-01.sh  to Launch v routers  in KVM    !!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+--------------------------------------Start-lab-srv-01.sh-------------------------------
+
+#  console line 4000+ 
+#  aux line 5000+
+ 
+
+
+#pe1.xr9k612.vlab01
+ 
+sudo qemu-system-x86_64  -enable-kvm -daemonize -cpu Westmere  -smp cores=1,threads=1,sockets=1 -m 5120M  -hda /home/lab/BBLAB/new_xr/pe1.xr9k612.vlab01.qcow2  -name pe1.xr9k612.vlab01,"process=pe1.vlab01" -display none -rtc base=utc \
+-serial telnet::4000,server,nowait -serial telnet::5000,server,nowait \
+-netdev tap,id=tap0,ifname=tap0,script=/home/lab/BBLAB/tap-mgmt-ifup,downscript=/home/lab/BBLAB/tap-mgmt-ifdown -device e1000,netdev=tap0,id=mgmt0,mac=00:01:ee:09:01:00 \
+-netdev tap,id=tap1001,ifname=tap1001,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1001,id=data0,mac=00:01:ee:01:01:01 \
+-netdev tap,id=tap1002,ifname=tap1002,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1002,id=data1,mac=00:01:ee:01:01:02 \
+-netdev tap,id=tap1003,ifname=tap1003,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1003,id=data2,mac=00:01:ee:01:01:03 \
+-netdev tap,id=tap1004,ifname=tap1004,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1004,id=data3,mac=00:01:ee:01:01:04 \
+-netdev l2tpv3,id=p2p1,src=127.0.0.1,dst=127.0.0.1,srcport=9101,dstport=9102,udp=on,rxsession=0x91019102,txsession=0x91019102,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p1,id=p2p1,mac=00:01:ee:01:91:02  \
+-netdev l2tpv3,id=p2p2,src=127.0.0.1,dst=127.0.0.1,srcport=9103,dstport=9104,udp=on,rxsession=0x91039104,txsession=0x91039104,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p2,id=p2p2,mac=00:01:ee:01:91:04  \
+-pidfile /home/lab/BBLAB/new_xr/pids/pe1.xr9k612.vlab01.pid
+
+#pe2.xr9k612.vlab01
+
+sudo qemu-system-x86_64  -enable-kvm -daemonize -cpu Westmere  -smp cores=1,threads=1,sockets=1 -m 5120M  -hda /home/lab/BBLAB/new_xr/pe2.xr9k612.vlab01.qcow2 -name pe2.xr9k612.vlab01,process="pe2.vlab01" -display none -rtc base=utc \
+-serial telnet::4001,server,nowait -serial telnet::5001,server,nowait \
+-netdev tap,id=tap1,ifname=tap1,script=/home/lab/BBLAB/tap-mgmt-ifup,downscript=/home/lab/BBLAB/tap-mgmt-ifdown -device e1000,netdev=tap1,id=mgmt0,mac=00:01:ee:09:01:01 \
+-netdev tap,id=tap1005,ifname=tap1005,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1005,id=data0,mac=00:01:ee:01:01:05 \
+-netdev tap,id=tap1006,ifname=tap1006,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1006,id=data1,mac=00:01:ee:01:01:06 \
+-netdev tap,id=tap1007,ifname=tap1007,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1007,id=data2,mac=00:01:ee:01:01:07 \
+-netdev tap,id=tap1008,ifname=tap1008,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1008,id=data3,mac=00:01:ee:01:01:08 \
+-netdev l2tpv3,id=p2p1,src=127.0.0.1,dst=127.0.0.1,srcport=9105,dstport=9106,udp=on,rxsession=0x91059106,txsession=0x91059106,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p1,id=p2p1,mac=00:01:ee:01:91:06  \
+-netdev l2tpv3,id=p2p2,src=127.0.0.1,dst=127.0.0.1,srcport=9107,dstport=9108,udp=on,rxsession=0x91079108,txsession=0x91079108,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p2,id=p2p2,mac=00:01:ee:01:91:08  \
+-pidfile /home/lab/BBLAB/new_xr/pids/pe2.pe1.xr9k612.vlab01.pid
+
+#pe3.xr9k612.vlab01
+
+sudo qemu-system-x86_64  -enable-kvm -daemonize -cpu Westmere  -smp cores=1,threads=1,sockets=1 -m 5120M  -hda /home/lab/BBLAB/new_xr/pe3.xr9k612.vlab01.qcow2 -name pe3.xr9k612.vlab01,process="pe3.vlab01" -display none -rtc base=utc \
+-serial telnet::4002,server,nowait -serial telnet::5002,server,nowait \
+-netdev tap,id=tap2,ifname=tap2,script=/home/lab/BBLAB/tap-mgmt-ifup,downscript=/home/lab/BBLAB/tap-mgmt-ifdown -device e1000,netdev=tap2,id=mgmt0,mac=00:01:ee:09:01:02 \
+-netdev tap,id=tap1009,ifname=tap1009,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1009,id=data0,mac=00:01:ee:01:01:09 \
+-netdev tap,id=tap1010,ifname=tap1010,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1010,id=data1,mac=00:01:ee:01:01:10 \
+-netdev tap,id=tap1011,ifname=tap1011,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1011,id=data2,mac=00:01:ee:01:01:11 \
+-netdev tap,id=tap1012,ifname=tap1012,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1012,id=data3,mac=00:01:ee:01:01:12 \
+-netdev l2tpv3,id=p2p1,src=127.0.0.1,dst=127.0.0.1,srcport=9109,dstport=9110,udp=on,rxsession=0x91099110,txsession=0x91099110,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p1,id=p2p1,mac=00:01:ee:01:91:10  \
+-netdev l2tpv3,id=p2p2,src=127.0.0.1,dst=127.0.0.1,srcport=9111,dstport=9112,udp=on,rxsession=0x91119112,txsession=0x91119112,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p2,id=p2p2,mac=00:01:ee:01:91:12  \
+-pidfile /home/lab/BBLAB/new_xr/pids/pe3.xr9k612.vlab01.pid
+
+#pe4.xr9k612.vlab01
+
+sudo qemu-system-x86_64  -enable-kvm -daemonize -cpu Westmere  -smp cores=1,threads=1,sockets=1 -m 5120M  -hda /home/lab/BBLAB/new_xr/pe4.xr9k612.vlab01.qcow2 -name pe4.xr9k612.vlab01,process="pe4.vlab01" -display none -rtc base=utc \
+-serial telnet::4003,server,nowait -serial telnet::5003,server,nowait \
+-netdev tap,id=tap3,ifname=tap3,script=/home/lab/BBLAB/tap-mgmt-ifup,downscript=/home/lab/BBLAB/tap-mgmt-ifdown -device e1000,netdev=tap3,id=mgmt0,mac=00:01:ee:09:01:03 \
+-netdev tap,id=tap1013,ifname=tap1013,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1013,id=data0,mac=00:01:ee:01:01:13 \
+-netdev tap,id=tap1014,ifname=tap1014,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1014,id=data1,mac=00:01:ee:01:01:14 \
+-netdev tap,id=tap1015,ifname=tap1015,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1015,id=data2,mac=00:01:ee:01:01:15 \
+-netdev tap,id=tap1016,ifname=tap1016,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1016,id=data3,mac=00:01:ee:01:01:16 \
+-netdev l2tpv3,id=p2p1,src=127.0.0.1,dst=127.0.0.1,srcport=9113,dstport=9114,udp=on,rxsession=0x91139114,txsession=0x91139114,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p1,id=p2p1,mac=00:01:ee:01:91:14  \
+-netdev l2tpv3,id=p2p2,src=127.0.0.1,dst=127.0.0.1,srcport=9115,dstport=9116,udp=on,rxsession=0x91159116,txsession=0x91159116,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p2,id=p2p2,mac=00:01:ee:01:91:16  \
+-pidfile /home/lab/BBLAB/new_xr/pids/pe4.xr9k612.vlab01.pid
+
+#p1.xr9k612.vlab01
+	
+sudo qemu-system-x86_64  -enable-kvm -daemonize -cpu Westmere  -smp cores=1,threads=1,sockets=1 -m 5120M  -hda /home/lab/BBLAB/new_xr/p1.xr9k612.vlab01.qcow2 -name p1.xr9k612.vlab01,process="p1.vlab01" -display none -rtc base=utc \
+-serial telnet::4004,server,nowait -serial telnet::5004,server,nowait \
+-netdev tap,id=tap4,ifname=tap4,script=/home/lab/BBLAB/tap-mgmt-ifup,downscript=/home/lab/BBLAB/tap-mgmt-ifdown -device e1000,netdev=tap4,id=mgmt0,mac=00:01:ee:09:01:04 \
+-netdev tap,id=tap1017,ifname=tap1017,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1017,id=data0,mac=00:01:ee:01:01:17 \
+-netdev tap,id=tap1018,ifname=tap1018,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1018,id=data1,mac=00:01:ee:01:01:18 \
+-netdev tap,id=tap1019,ifname=tap1019,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1019,id=data2,mac=00:01:ee:01:01:19 \
+-netdev tap,id=tap1020,ifname=tap1020,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1020,id=data3,mac=00:01:ee:01:01:20 \
+-netdev l2tpv3,id=p2p1,src=127.0.0.1,dst=127.0.0.1,srcport=9117,dstport=9118,udp=on,rxsession=0x91179118,txsession=0x91179118,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p1,id=p2p1,mac=00:01:ee:01:91:18  \
+-netdev l2tpv3,id=p2p2,src=127.0.0.1,dst=127.0.0.1,srcport=9119,dstport=9120,udp=on,rxsession=0x91199120,txsession=0x91199120,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p2,id=p2p2,mac=00:01:ee:01:91:20  \
+-netdev l2tpv3,id=p2p3,src=127.0.0.1,dst=127.0.0.1,srcport=9121,dstport=9122,udp=on,rxsession=0x91219122,txsession=0x91219122,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p3,id=p2p3,mac=00:01:ee:01:91:22  \
+-netdev l2tpv3,id=p2p4,src=127.0.0.1,dst=127.0.0.1,srcport=9123,dstport=9124,udp=on,rxsession=0x91239124,txsession=0x91239124,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p4,id=p2p4,mac=00:01:ee:01:91:24  \
+-netdev l2tpv3,id=p2p5,src=127.0.0.1,dst=127.0.0.1,srcport=9213,dstport=9214,udp=on,rxsession=0x92139214,txsession=0x92139214,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p5,id=p2p5,mac=00:01:ee:01:92:13  \
+-pidfile /home/lab/BBLAB/new_xr/pids/p1.xr9k612.vlab01.pid
+
+#p2.xr9k612.vlab01
+
+sudo qemu-system-x86_64  -enable-kvm -daemonize -cpu Westmere  -smp cores=1,threads=1,sockets=1 -m 5120M  -hda /home/lab/BBLAB/new_xr/p2.xr9k612.vlab01.qcow2  -name p2.xr9k612.vlab01,process="p2.vlab01" -display none -rtc base=utc \
+-serial telnet::4005,server,nowait -serial telnet::5005,server,nowait \
+-netdev tap,id=tap5,ifname=tap5,script=/home/lab/BBLAB/tap-mgmt-ifup,downscript=/home/lab/BBLAB/tap-mgmt-ifdown -device e1000,netdev=tap5,id=mgmt0,mac=00:01:ee:09:01:05 \
+-netdev tap,id=tap1021,ifname=tap1021,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1021,id=data0,mac=00:01:ee:01:01:21 \
+-netdev tap,id=tap1022,ifname=tap1022,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1022,id=data1,mac=00:01:ee:01:01:22 \
+-netdev tap,id=tap1023,ifname=tap1023,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1023,id=data2,mac=00:01:ee:01:01:23 \
+-netdev tap,id=tap1024,ifname=tap1024,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1024,id=data3,mac=00:01:ee:01:01:24 \
+-netdev l2tpv3,id=p2p1,src=127.0.0.1,dst=127.0.0.1,srcport=9125,dstport=9126,udp=on,rxsession=0x91259126,txsession=0x91259126,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p1,id=p2p1,mac=00:01:ee:01:91:26  \
+-netdev l2tpv3,id=p2p2,src=127.0.0.1,dst=127.0.0.1,srcport=9127,dstport=9128,udp=on,rxsession=0x91279128,txsession=0x91079108,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p2,id=p2p2,mac=00:01:ee:01:91:28  \
+-netdev l2tpv3,id=p2p3,src=127.0.0.1,dst=127.0.0.1,srcport=9129,dstport=9130,udp=on,rxsession=0x91299130,txsession=0x91279128,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p3,id=p2p3,mac=00:01:ee:01:91:30  \
+-netdev l2tpv3,id=p2p4,src=127.0.0.1,dst=127.0.0.1,srcport=9131,dstport=9132,udp=on,rxsession=0x91319132,txsession=0x91319132,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p4,id=p2p4,mac=00:01:ee:01:91:32  \
+-netdev l2tpv3,id=p2p5,src=127.0.0.1,dst=127.0.0.1,srcport=9214,dstport=9213,udp=on,rxsession=0x92139214,txsession=0x92139214,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p5,id=p2p5,mac=00:01:ee:01:92:14  \
+-pidfile /home/lab/BBLAB/new_xr/pids/p2.xr9k612.vlab01.pid
+
+
+#pe5.xr9k612.vlab01
+
+sudo qemu-system-x86_64  -enable-kvm -daemonize -cpu Westmere  -smp cores=1,threads=1,sockets=1 -m 5120M  -hda /home/lab/BBLAB/new_xr/pe5.xr9k612.vlab01.qcow2 -name pe5.xr9k612.vlab01,process="pe5.vlab01" -display none -rtc base=utc \
+-serial telnet::4006,server,nowait -serial telnet::5006,server,nowait \
+-netdev tap,id=tap6,ifname=tap6,script=/home/lab/BBLAB/tap-mgmt-ifup,downscript=/home/lab/BBLAB/tap-mgmt-ifdown -device e1000,netdev=tap6,id=mgmt0,mac=00:01:ee:09:01:06 \
+-netdev tap,id=tap1025,ifname=tap1025,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1025,id=data0,mac=00:01:ee:01:01:25 \
+-netdev tap,id=tap1026,ifname=tap1026,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1026,id=data1,mac=00:01:ee:01:01:26 \
+-netdev tap,id=tap1027,ifname=tap1027,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1027,id=data2,mac=00:01:ee:01:01:27 \
+-netdev tap,id=tap1028,ifname=tap1028,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1028,id=data3,mac=00:01:ee:01:01:28 \
+-netdev l2tpv3,id=p2p1,src=127.0.0.1,dst=127.0.0.1,srcport=9133,dstport=9134,udp=on,rxsession=0x91339134,txsession=0x91339134,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p1,id=p2p1,mac=00:01:ee:01:91:34  \
+-netdev l2tpv3,id=p2p2,src=127.0.0.1,dst=127.0.0.1,srcport=9135,dstport=9136,udp=on,rxsession=0x91359136,txsession=0x91359136,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p2,id=p2p2,mac=00:01:ee:01:91:36  \
+-pidfile /home/lab/BBLAB/new_xr/pids/pe5.xr9k612.vlab01.pid
+
+#pe6.xr9k612.vlab01
+
+sudo qemu-system-x86_64  -enable-kvm -daemonize -cpu Westmere  -smp cores=1,threads=1,sockets=1 -m 5120M  -hda /home/lab/BBLAB/new_xr/pe6.xr9k612.vlab01.qcow2 -name pe6.xr9k612.vlab01,process="pe6.vlab01" -display none -rtc base=utc \
+-serial telnet::4007,server,nowait -serial telnet::5007,server,nowait \
+-netdev tap,id=tap7,ifname=tap7,script=/home/lab/BBLAB/tap-mgmt-ifup,downscript=/home/lab/BBLAB/tap-mgmt-ifdown -device e1000,netdev=tap7,id=mgmt0,mac=00:01:ee:09:01:07 \
+-netdev tap,id=tap1029,ifname=tap1029,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1029,id=data0,mac=00:01:ee:01:01:29 \
+-netdev tap,id=tap1030,ifname=tap1030,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1030,id=data1,mac=00:01:ee:01:01:30 \
+-netdev tap,id=tap1031,ifname=tap1031,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1031,id=data2,mac=00:01:ee:01:01:31 \
+-netdev tap,id=tap1032,ifname=tap1032,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1032,id=data3,mac=00:01:ee:01:01:32 \
+-netdev l2tpv3,id=p2p1,src=127.0.0.1,dst=127.0.0.1,srcport=9137,dstport=9138,udp=on,rxsession=0x91379138,txsession=0x91379138,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p1,id=p2p1,mac=00:01:ee:01:91:38  \
+-netdev l2tpv3,id=p2p2,src=127.0.0.1,dst=127.0.0.1,srcport=9139,dstport=9140,udp=on,rxsession=0x91399140,txsession=0x91399140,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p2,id=p2p2,mac=00:01:ee:01:91:40  \
+-pidfile /home/lab/BBLAB/new_xr/pids/pe6.xr9k612.vlab01.pid
+
+#rrr1.xr9k612.vlab01
+
+sudo qemu-system-x86_64  -enable-kvm -daemonize -cpu Westmere  -smp cores=1,threads=1,sockets=1 -m 5120M  -hda /home/lab/BBLAB/new_xr/rrr1.xr9k612.vlab01.qcow2  -name rrr1.xr9k612.vlab01,process="rrr1.vlab01" -display none -rtc base=utc   \
+-serial telnet::4008,server,nowait -serial telnet::5008,server,nowait \
+-netdev tap,id=tap8,ifname=tap8,script=/home/lab/BBLAB/tap-mgmt-ifup,downscript=/home/lab/BBLAB/tap-mgmt-ifdown -device e1000,netdev=tap8,id=mgmt0,mac=00:01:ee:09:01:08 \
+-netdev tap,id=tap1033,ifname=tap1033,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1033,id=data0,mac=00:01:ee:01:01:33 \
+-netdev tap,id=tap1034,ifname=tap1034,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1034,id=data1,mac=00:01:ee:01:01:34 \
+-netdev tap,id=tap1035,ifname=tap1035,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1035,id=data2,mac=00:01:ee:01:01:35 \
+-netdev tap,id=tap1036,ifname=tap1036,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1036,id=data3,mac=00:01:ee:01:01:36 \
+-pidfile /home/lab/BBLAB/new_xr/pids/rrr1.xr9k612.vlab01.pid
+
+#rrr2.xr9k612.vlab01
+
+sudo qemu-system-x86_64  -enable-kvm -daemonize -cpu Westmere  -smp cores=1,threads=1,sockets=1 -m 5120M  -hda /home/lab/BBLAB/new_xr/rrr2.xr9k612.vlab01.qcow2  -name rrr2.xr9k612.vlab01.qcow2,process="rrr2.vlab01" -display none -rtc base=utc   \
+-serial telnet::4009,server,nowait -serial telnet::5009,server,nowait \
+-netdev tap,id=tap9,ifname=tap9,script=/home/lab/BBLAB/tap-mgmt-ifup,downscript=/home/lab/BBLAB/tap-mgmt-ifdown -device e1000,netdev=tap9,id=mgmt0,mac=00:01:ee:09:01:09 \
+-netdev tap,id=tap1037,ifname=tap1037,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1037,id=data0,mac=00:01:ee:01:01:37 \
+-netdev tap,id=tap1038,ifname=tap1038,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1038,id=data1,mac=00:01:ee:01:01:38 \
+-netdev tap,id=tap1039,ifname=tap1039,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1039,id=data2,mac=00:01:ee:01:01:39 \
+-netdev tap,id=tap1040,ifname=tap1040,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1040,id=data3,mac=00:01:ee:01:01:40 \
+-pidfile /home/lab/BBLAB/new_xr/pids/rrr2.xr9k612.vlab01.pid 
+
+#ce1.nxos73i61.vlab01.pid
+
+sudo qemu-system-x86_64 -enable-kvm  -daemonize  -cpu host -smp 2 -m 7168M -name ce1.nxos73i61.vlab01,process="ce1.vlab01" -display none -rtc base=utc  \
+-drive if=pflash,format=raw,readonly,file=/usr/share/OVMF/OVMF_CODE.fd \
+-drive if=pflash,format=raw,file=/home/lab/BBLAB/nxos/9k/703I61/ce1.nxos73i61.vlab01_OVMF_VARS.fd \
+-device ahci,id=ahci0,bus=pci.0 -drive file=/home/lab/BBLAB/nxos/9k/703I61/ce1.nxos73i61.vlab01.qcow2,if=none,id=drive-sata-disk0,format=qcow2 \
+-device ide-drive,drive=drive-sata-disk0,bus=ahci0.0,id=hda01 \
+-serial telnet::4012,server,nowait -serial telnet::5012,server,nowait \
+-netdev tap,id=tap12,ifname=tap12,script=/home/lab/BBLAB/tap-mgmt-ifup,downscript=/home/lab/BBLAB/tap-mgmt-ifdown -device e1000,netdev=tap12,id=mgmt0,mac=00:01:ee:09:01:12,   \
+-netdev tap,id=tap1061,ifname=tap1061,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1061,id=data0,mac=00:01:ee:01:01:61   \
+-netdev tap,id=tap1062,ifname=tap1062,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1062,id=data1,mac=00:01:ee:01:01:62   \
+-netdev tap,id=tap1063,ifname=tap1063,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1063,id=data2,mac=00:01:ee:01:01:63   \
+-netdev tap,id=tap1064,ifname=tap1064,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1064,id=data3,mac=00:01:ee:01:01:64   \
+-netdev tap,id=tap1065,ifname=tap1065,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1065,id=data4,mac=00:01:ee:01:01:65   \
+-netdev tap,id=tap1066,ifname=tap1066,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1066,id=data5,mac=00:01:ee:01:01:66   \
+-netdev l2tpv3,id=xbar1,src=127.0.0.1,dst=127.0.0.1,srcport=9141,dstport=9142,udp=on,rxsession=0x91419142,txsession=0x91419142,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=xbar1,id=xbar1,mac=00:01:ee:01:91:42  \
+-netdev l2tpv3,id=p2p1,src=127.0.0.1,dst=127.0.0.1,srcport=9102,dstport=9101,udp=on,rxsession=0x91019102,txsession=0x91019102,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p1,id=p2p1,mac=00:01:ee:01:91:01,  \
+-netdev l2tpv3,id=xbar2,src=127.0.0.1,dst=127.0.0.1,srcport=9145,dstport=9146,udp=on,rxsession=0x91459146,txsession=0x91459146,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=xbar2,id=xbar2,mac=00:01:ee:01:91:45 \
+-netdev l2tpv3,id=p2p2,src=127.0.0.1,dst=127.0.0.1,srcport=9104,dstport=9103,udp=on,rxsession=0x91039104,txsession=0x91039104,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p2,id=p2p2,mac=00:01:ee:01:91:03,  \
+-pidfile /home/lab/BBLAB/nxos/9k/703I61/pids/ce1.nxos73i61.vlab01.pid
+
+
+
+#ce2.nxos73i61.vlab01.pid
+
+sudo qemu-system-x86_64 -enable-kvm  -daemonize  -cpu host -smp 2 -m 7168M -name ce2.nxos73i61.vlab01,process="ce2.vlab01" -display none -rtc base=utc  \
+-drive if=pflash,format=raw,readonly,file=/usr/share/OVMF/OVMF_CODE.fd \
+-drive if=pflash,format=raw,file=/home/lab/BBLAB/nxos/9k/703I61/ce2.nxos73i61.vlab01_OVMF_VARS.fd \
+-device ahci,id=ahci0,bus=pci.0 -drive file=/home/lab/BBLAB/nxos/9k/703I61/ce2.nxos73i61.vlab01.qcow2,if=none,id=drive-sata-disk0,format=qcow2 \
+-device ide-drive,drive=drive-sata-disk0,bus=ahci0.0,id=hda01 \
+-serial telnet::4013,server,nowait -serial telnet::5013,server,nowait \
+-netdev tap,id=tap13,ifname=tap13,script=/home/lab/BBLAB/tap-mgmt-ifup,downscript=/home/lab/BBLAB/tap-mgmt-ifdown -device e1000,netdev=tap13,id=mgmt0,mac=00:01:ee:09:01:13,  \
+-netdev tap,id=tap1071,ifname=tap1071,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1071,id=data0,mac=00:01:ee:01:01:71   \
+-netdev tap,id=tap1072,ifname=tap1072,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1072,id=data1,mac=00:01:ee:01:01:72   \
+-netdev tap,id=tap1073,ifname=tap1073,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1073,id=data2,mac=00:01:ee:01:01:73   \
+-netdev tap,id=tap1074,ifname=tap1074,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1074,id=data3,mac=00:01:ee:01:01:74   \
+-netdev tap,id=tap1075,ifname=tap1075,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1075,id=data4,mac=00:01:ee:01:01:75   \
+-netdev tap,id=tap1076,ifname=tap1076,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1076,id=data5,mac=00:01:ee:01:01:76   \
+-netdev l2tpv3,id=xbar1,src=127.0.0.1,dst=127.0.0.1,srcport=9142,dstport=9141,udp=on,rxsession=0x91419142,txsession=0x91419142,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=xbar1,id=xbar1,mac=00:01:ee:01:91:41  \
+-netdev l2tpv3,id=p2p1,src=127.0.0.1,dst=127.0.0.1,srcport=9106,dstport=9105,udp=on,rxsession=0x91059106,txsession=0x91059106,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p1,id=p2p1,mac=00:01:ee:01:91:05,  \
+-netdev l2tpv3,id=xbar2,src=127.0.0.1,dst=127.0.0.1,srcport=9146,dstport=9145,udp=on,rxsession=0x91459146,txsession=0x91459146,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=xbar2,id=xbar2,mac=00:01:ee:01:91:46  \
+-netdev l2tpv3,id=p2p2,src=127.0.0.1,dst=127.0.0.1,srcport=9108,dstport=9107,udp=on,rxsession=0x91079108,txsession=0x91079108,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p2,id=p2p2,mac=00:01:ee:01:91:07,  \
+-pidfile /home/lab/BBLAB/nxos/9k/703I61/pids/ce2.nxos73i61.vlab01.pid
+
+
+
+#ce3.nxos73i61.vlab01.pid
+
+sudo qemu-system-x86_64 -enable-kvm  -daemonize  -cpu host -smp 2 -m 7168M -name ce3.nxos73i61.vlab01,process="ce3.vlab01" -display none -rtc base=utc  \
+-drive if=pflash,format=raw,readonly,file=/usr/share/OVMF/OVMF_CODE.fd \
+-drive if=pflash,format=raw,file=/home/lab/BBLAB/nxos/9k/703I61/ce3.nxos73i61.vlab01_OVMF_VARS.fd \
+-device ahci,id=ahci0,bus=pci.0 -drive file=/home/lab/BBLAB/nxos/9k/703I61/ce3.nxos73i61.vlab01.qcow2,if=none,id=drive-sata-disk0,format=qcow2 \
+-device ide-drive,drive=drive-sata-disk0,bus=ahci0.0,id=hda01 \
+-serial telnet::4014,server,nowait -serial telnet::5014,server,nowait \
+-netdev tap,id=tap14,ifname=tap14,script=/home/lab/BBLAB/tap-mgmt-ifup,downscript=/home/lab/BBLAB/tap-mgmt-ifdown -device e1000,netdev=tap14,id=mgmt0,mac=00:01:ee:09:01:14  \
+-netdev tap,id=tap1081,ifname=tap1081,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1081,id=data0,mac=00:01:ee:01:01:81   \
+-netdev tap,id=tap1082,ifname=tap1082,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1082,id=data1,mac=00:01:ee:01:01:82   \
+-netdev tap,id=tap1083,ifname=tap1083,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1083,id=data2,mac=00:01:ee:01:01:83   \
+-netdev tap,id=tap1084,ifname=tap1084,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1084,id=data3,mac=00:01:ee:01:01:84   \
+-netdev tap,id=tap1085,ifname=tap1085,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1085,id=data4,mac=00:01:ee:01:01:85   \
+-netdev tap,id=tap1086,ifname=tap1086,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1086,id=data5,mac=00:01:ee:01:01:86   \
+-netdev l2tpv3,id=xbar1,src=127.0.0.1,dst=127.0.0.1,srcport=9143,dstport=9144,udp=on,rxsession=0x91439144,txsession=0x91439144,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=xbar1,id=xbar1,mac=00:01:ee:01:91:44  \
+-netdev l2tpv3,id=p2p1,src=127.0.0.1,dst=127.0.0.1,srcport=9110,dstport=9109,udp=on,rxsession=0x91099110,txsession=0x91099110,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on  -device e1000,netdev=p2p1,id=p2p1,mac=00:01:ee:01:91:09,  \
+-netdev l2tpv3,id=xbar2,src=127.0.0.1,dst=127.0.0.1,srcport=9147,dstport=9148,udp=on,rxsession=0x91479148,txsession=0x91479148,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=xbar2,id=xbar2,mac=00:01:ee:01:91:47  \
+-netdev l2tpv3,id=p2p2,src=127.0.0.1,dst=127.0.0.1,srcport=9112,dstport=9111,udp=on,rxsession=0x91119112,txsession=0x91119112,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p2,id=p2p2,mac=00:01:ee:01:91:11,  \
+-pidfile /home/lab/BBLAB/nxos/9k/703I61/pids/ce3.nxos73i61.vlab01.pid
+
+#ce4.nxos73i61.vlab01.pid
+
+sudo qemu-system-x86_64 -enable-kvm  -daemonize  -cpu host -smp 2 -m 7168M -name ce4.nxos73i61.vlab01,process="ce4.vlab01" -display none -rtc base=utc  \
+-drive if=pflash,format=raw,readonly,file=/usr/share/OVMF/OVMF_CODE.fd \
+-drive if=pflash,format=raw,file=/home/lab/BBLAB/nxos/9k/703I61/ce4.nxos73i61.vlab01_OVMF_VARS.fd \
+-device ahci,id=ahci0,bus=pci.0 -drive file=/home/lab/BBLAB/nxos/9k/703I61/ce4.nxos73i61.vlab01.qcow2,if=none,id=drive-sata-disk0,format=qcow2 \
+-device ide-drive,drive=drive-sata-disk0,bus=ahci0.0,id=hda01 \
+-serial telnet::4015,server,nowait -serial telnet::5015,server,nowait \
+-netdev tap,id=tap15,ifname=tap15,script=/home/lab/BBLAB/tap-mgmt-ifup,downscript=/home/lab/BBLAB/tap-mgmt-ifdown -device e1000,netdev=tap15,id=mgmt0,mac=00:01:ee:09:01:15,  \
+-netdev tap,id=tap1091,ifname=tap1091,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1091,id=data0,mac=00:01:ee:01:01:91   \
+-netdev tap,id=tap1092,ifname=tap1092,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1092,id=data1,mac=00:01:ee:01:01:92   \
+-netdev tap,id=tap1093,ifname=tap1093,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1093,id=data2,mac=00:01:ee:01:01:93   \
+-netdev tap,id=tap1094,ifname=tap1094,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1094,id=data3,mac=00:01:ee:01:01:94   \
+-netdev tap,id=tap1095,ifname=tap1095,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1095,id=data4,mac=00:01:ee:01:01:95   \
+-netdev tap,id=tap1096,ifname=tap1096,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1096,id=data5,mac=00:01:ee:01:01:96   \
+-netdev l2tpv3,id=xbar1,src=127.0.0.1,dst=127.0.0.1,srcport=9144,dstport=9143,udp=on,rxsession=0x91439144,txsession=0x91439144,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=xbar1,id=xbar1,mac=00:01:ee:01:91:43  \
+-netdev l2tpv3,id=p2p1,src=127.0.0.1,dst=127.0.0.1,srcport=9114,dstport=9113,udp=on,rxsession=0x91139114,txsession=0x91139114,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p1,id=p2p1,mac=00:01:ee:01:91:13,  \
+-netdev l2tpv3,id=xbar2,src=127.0.0.1,dst=127.0.0.1,srcport=9148,dstport=9147,udp=on,rxsession=0x91479148,txsession=0x91479148,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=xbar2,id=xbar2,mac=00:01:ee:01:91:48  \
+-netdev l2tpv3,id=p2p2,src=127.0.0.1,dst=127.0.0.1,srcport=9116,dstport=9115,udp=on,rxsession=0x91159116,txsession=0x91159116,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p2,id=p2p2,mac=00:01:ee:01:91:15,  \
+-pidfile /home/lab/BBLAB/nxos/9k/703I61/pids/ce4.nxos73i61.vlab01.pid
+
+#ce5.nxos73i61.vlab01.pid
+
+sudo qemu-system-x86_64 -enable-kvm  -daemonize  -cpu  host -smp 2 -m 7168M -name ce5.nxos73i61.vlab01,process="ce5.vlab01" -display none -rtc base=utc  \
+-drive if=pflash,format=raw,readonly,file=/usr/share/OVMF/OVMF_CODE.fd \
+-drive if=pflash,format=raw,file=/home/lab/BBLAB/nxos/9k/703I61/ce5.nxos73i61.vlab01_OVMF_VARS.fd \
+-device ahci,id=ahci0,bus=pci.0 -drive file=/home/lab/BBLAB/nxos/9k/703I61/ce5.nxos73i61.vlab01.qcow2,if=none,id=drive-sata-disk0,format=qcow2 \
+-device ide-drive,drive=drive-sata-disk0,bus=ahci0.0,id=hda01 \
+-serial telnet::4016,server,nowait -serial telnet::5016,server,nowait \
+-netdev tap,id=tap16,ifname=tap16,script=/home/lab/BBLAB/tap-mgmt-ifup,downscript=/home/lab/BBLAB/tap-mgmt-ifdown -device e1000,netdev=tap16,id=mgmt0,mac=00:01:ee:09:01:16  \
+-netdev tap,id=tap1201,ifname=tap1201,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1201,id=data0,mac=00:01:ee:01:02:01 \
+-netdev tap,id=tap1202,ifname=tap1202,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1202,id=data1,mac=00:01:ee:01:02:02 \
+-netdev tap,id=tap1203,ifname=tap1203,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1203,id=data2,mac=00:01:ee:01:02:03 \
+-netdev tap,id=tap1204,ifname=tap1204,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1204,id=data3,mac=00:01:ee:01:02:04 \
+-netdev tap,id=tap1205,ifname=tap1205,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1205,id=data4,mac=00:01:ee:01:02:05 \
+-netdev tap,id=tap1206,ifname=tap1206,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1206,id=data5,mac=00:01:ee:01:02:06 \
+-netdev l2tpv3,id=xbar1,src=127.0.0.1,dst=127.0.0.1,srcport=9149,dstport=9150,udp=on,rxsession=0x91439144,txsession=0x91439144,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=xbar1,id=xbar1,mac=00:01:ee:01:91:50  \
+-netdev l2tpv3,id=p2p1,src=127.0.0.1,dst=127.0.0.1,srcport=9134,dstport=9133,udp=on,rxsession=0x91339134,txsession=0x91339134,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p1,id=p2p1,mac=00:01:ee:01:91:33  \
+-netdev l2tpv3,id=xbar2,src=127.0.0.1,dst=127.0.0.1,srcport=9151,dstport=9152,udp=on,rxsession=0x91479148,txsession=0x91479148,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=xbar2,id=xbar2,mac=00:01:ee:01:91:52  \
+-pidfile /home/lab/BBLAB/nxos/9k/703I61/pids/ce5.nxos73i61.vlab01.pid
+
+
+#ce6.nxos73i61.vlab01.pid
+
+sudo qemu-system-x86_64 -enable-kvm  -daemonize  -cpu host -smp 2 -m 7168M -name ce6.nxos73i61.vlab01,process="ce6.vlab01" -display none -rtc base=utc  \
+-drive if=pflash,format=raw,readonly,file=/usr/share/OVMF/OVMF_CODE.fd \
+-drive if=pflash,format=raw,file=/home/lab/BBLAB/nxos/9k/703I61/ce6.nxos73i61.vlab01_OVMF_VARS.fd \
+-device ahci,id=ahci0,bus=pci.0 -drive file=/home/lab/BBLAB/nxos/9k/703I61/ce6.nxos73i61.vlab01.qcow2,if=none,id=drive-sata-disk0,format=qcow2 \
+-device ide-drive,drive=drive-sata-disk0,bus=ahci0.0,id=hda01 \
+-serial telnet::4017,server,nowait -serial telnet::5017,server,nowait \
+-netdev tap,id=tap17,ifname=tap17,script=/home/lab/BBLAB/tap-mgmt-ifup,downscript=/home/lab/BBLAB/tap-mgmt-ifdown -device e1000,netdev=tap17,id=mgmt0,mac=00:01:ee:09:01:17  \
+-netdev tap,id=tap1207,ifname=tap1207,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1207,id=data0,mac=00:01:ee:01:02:07 \
+-netdev tap,id=tap1208,ifname=tap1208,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1208,id=data1,mac=00:01:ee:01:02:08 \
+-netdev tap,id=tap1209,ifname=tap1209,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1209,id=data2,mac=00:01:ee:01:02:09 \
+-netdev tap,id=tap1210,ifname=tap1210,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1210,id=data3,mac=00:01:ee:01:02:10 \
+-netdev tap,id=tap1211,ifname=tap1211,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1211,id=data4,mac=00:01:ee:01:02:11 \
+-netdev tap,id=tap1212,ifname=tap1212,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1212,id=data5,mac=00:01:ee:01:02:12 \
+-netdev l2tpv3,id=xbar1,src=127.0.0.1,dst=127.0.0.1,srcport=9150,dstport=9149,udp=on,rxsession=0x91439144,txsession=0x91439144,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=xbar1,id=xbar1,mac=00:01:ee:01:91:49  \
+-netdev l2tpv3,id=p2p1,src=127.0.0.1,dst=127.0.0.1,srcport=9138,dstport=9137,udp=on,rxsession=0x91379138,txsession=0x91379138,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p1,id=p2p1,mac=00:01:ee:01:91:37  \
+-netdev l2tpv3,id=xbar2,src=127.0.0.1,dst=127.0.0.1,srcport=9152,dstport=9151,udp=on,rxsession=0x91479148,txsession=0x91479148,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=xbar2,id=xbar2,mac=00:01:ee:01:91:51  \
+-pidfile /home/lab/BBLAB/nxos/9k/703I61/pids/ce6.nxos73i61.vlab01
+
+
+#ce7.nxos73i61.vlab01.pid
+
+sudo qemu-system-x86_64 -enable-kvm  -daemonize  -cpu host -smp 2 -m 7168M -name ce7.nxos73i61.vlab01,process="ce7.vlab01" -display none -rtc base=utc  \
+-drive if=pflash,format=raw,readonly,file=/usr/share/OVMF/OVMF_CODE.fd \
+-drive if=pflash,format=raw,file=/home/lab/BBLAB/nxos/9k/703I61/ce7.nxos73i61.vlab01_OVMF_VARS.fd \
+-device ahci,id=ahci0,bus=pci.0 -drive file=/home/lab/BBLAB/nxos/9k/703I61/ce7.nxos73i61.vlab01.qcow2,if=none,id=drive-sata-disk0,format=qcow2 \
+-device ide-drive,drive=drive-sata-disk0,bus=ahci0.0,id=hda01 \
+-serial telnet::4018,server,nowait -serial telnet::5018,server,nowait \
+-netdev tap,id=tap18,ifname=tap18,script=/home/lab/BBLAB/tap-mgmt-ifup,downscript=/home/lab/BBLAB/tap-mgmt-ifdown -device e1000,netdev=tap18,id=mgmt0,mac=00:01:ee:09:01:18  \
+-netdev tap,id=tap1213,ifname=tap1213,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1213,id=data0,mac=00:01:ee:01:02:13 \
+-netdev tap,id=tap1214,ifname=tap1214,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1214,id=data1,mac=00:01:ee:01:02:14 \
+-netdev tap,id=tap1215,ifname=tap1215,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1215,id=data2,mac=00:01:ee:01:02:15 \
+-netdev tap,id=tap1216,ifname=tap1216,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1216,id=data3,mac=00:01:ee:01:02:16 \
+-netdev tap,id=tap1217,ifname=tap1217,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1217,id=data4,mac=00:01:ee:01:02:17 \
+-netdev tap,id=tap1218,ifname=tap1218,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1218,id=data5,mac=00:01:ee:01:02:18 \
+-netdev l2tpv3,id=xbar1,src=127.0.0.1,dst=127.0.0.1,srcport=9153,dstport=9154,udp=on,rxsession=0x91539154,txsession=0x91539154,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=xbar1,id=xbar1,mac=00:01:ee:01:91:54  \
+-netdev l2tpv3,id=p2p1,src=127.0.0.1,dst=127.0.0.1,srcport=9136,dstport=9135,udp=on,rxsession=0x91359136,txsession=0x91359136,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p1,id=p2p1,mac=00:01:ee:01:91:35  \
+-netdev l2tpv3,id=xbar2,src=127.0.0.1,dst=127.0.0.1,srcport=9155,dstport=9156,udp=on,rxsession=0x91479148,txsession=0x91479148,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=xbar2,id=xbar2,mac=00:01:ee:01:91:56  \
+-pidfile /home/lab/BBLAB/nxos/9k/703I61/pids/ce7.nxos73i61.vlab01
+
+#ce8.nxos73i61.vlab01.pid
+
+sudo qemu-system-x86_64 -enable-kvm  -daemonize  -cpu host  -smp 2 -m 7168M -name ce8.nxos73i61.vlab01,process="ce8.vlab01" -display none -rtc base=utc  \
+-drive if=pflash,format=raw,readonly,file=/usr/share/OVMF/OVMF_CODE.fd \
+-drive if=pflash,format=raw,file=/home/lab/BBLAB/nxos/9k/703I61/ce8.nxos73i61.vlab01_OVMF_VARS.fd \
+-device ahci,id=ahci0,bus=pci.0 -drive file=/home/lab/BBLAB/nxos/9k/703I61/ce8.nxos73i61.vlab01.qcow2,if=none,id=drive-sata-disk0,format=qcow2 \
+-device ide-drive,drive=drive-sata-disk0,bus=ahci0.0,id=hda01 \
+-serial telnet::4019,server,nowait -serial telnet::5019,server,nowait \
+-netdev tap,id=tap19,ifname=tap19,script=/home/lab/BBLAB/tap-mgmt-ifup,downscript=/home/lab/BBLAB/tap-mgmt-ifdown -device e1000,netdev=tap19,id=mgmt0,mac=00:01:ee:09:01:19  \
+-netdev tap,id=tap1219,ifname=tap1219,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1219,id=data0,mac=00:01:ee:01:02:19 \
+-netdev tap,id=tap1220,ifname=tap1220,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1220,id=data1,mac=00:01:ee:01:02:20 \
+-netdev tap,id=tap1221,ifname=tap1221,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1221,id=data2,mac=00:01:ee:01:02:21 \
+-netdev tap,id=tap1222,ifname=tap1222,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1222,id=data3,mac=00:01:ee:01:02:22 \
+-netdev tap,id=tap1223,ifname=tap1223,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1223,id=data4,mac=00:01:ee:01:02:23 \
+-netdev tap,id=tap1224,ifname=tap1224,script=/home/lab/BBLAB/tap-data-ifup,downscript=/home/lab/BBLAB/tap-data-ifdown -device e1000,netdev=tap1224,id=data5,mac=00:01:ee:01:02:24 \
+-netdev l2tpv3,id=xbar1,src=127.0.0.1,dst=127.0.0.1,srcport=9154,dstport=9153,udp=on,rxsession=0x91539154,txsession=0x91539154,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=xbar1,id=xbar1,mac=00:01:ee:01:91:53  \
+-netdev l2tpv3,id=p2p1,src=127.0.0.1,dst=127.0.0.1,srcport=9140,dstport=9139,udp=on,rxsession=0x91399140,txsession=0x91399140,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=p2p1,id=p2p1,mac=00:01:ee:01:91:39  \
+-netdev l2tpv3,id=xbar2,src=127.0.0.1,dst=127.0.0.1,srcport=9156,dstport=9155,udp=on,rxsession=0x91479148,txsession=0x91479148,rxcookie=0x012345678,txcookie=0x012345678,counter=off,pincounter=on -device e1000,netdev=xbar2,id=xbar2,mac=00:01:ee:01:91:55  \
+-pidfile /home/lab/BBLAB/nxos/9k/703I61/pids/ce8.nxos73i61.vlab01
+
+
+-------------------------------------------
+
+# Verify console access to all routers.
+
+
+
+
+
+ 

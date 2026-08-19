@@ -1,0 +1,80 @@
+# Steps to build odl-02 docker container on prod-01 server. It is assumed that prod-01 has docker installed and the docker image and 
+networks have been created. See prod-01-build-log file for more details.
+# The container will have just one interface. The interface is connected to the mgmt network - net-172-20-254-23 
+# This ODL container is used to interact with network nodes using Netconf southbound plugin
+# All the network nodes are netconf enabled and listen on default port 830
+# We use ODl Nitrogen SR3 image as there is an issue with Netconf plugin on the Oxygen release.
+# We will launch the container, attach them to appropriate networks,  and install required ODL packages.
+
+# Launch the container and attach to mgmt network. --cap-add NET_ADMIN permits container network config to be changed.
+
+sudo docker run --cap-add NET_ADMIN -itd --name odl-02 --network=net-172-20-254-23 --ip 172.20.254.225 --hostname odl-02 --dns 8.8.8.8 odl:nitrogen-k073
+
+# Verify the container is running
+sudo docker container  ls -a
+sudo docker inspect odl-02
+sudo docker exec -it odl-02 sh
+ifconfig
+ip route 
+ping 172.20.254.1
+top
+
+# verify ssh access to the container 
+ssh root@172.20.254.225
+
+# odl karaf ssh shell listens by default on port 8101. It can be accessed in two ways. 
+#  1. SSH to the container and connect locally
+	ssh root@172.20.254.225
+        run the client script -  /opt/odl-nitrogen/bin/client 
+	
+# 2. Remotely by using SSH to odl karaf directly on port 8101. Use the locally configured Karaf credentials.
+	
+	ssh karaf@172.20.254.225 -p 8101
+	
+# Note: use logout or CTRL+D to disconnect from the odl karaf shell.
+
+# We will now install the required southbound plugins from the odl-karaf console.
+	
+#Install ODL dlux core module and basic apps. 
+
+	feature:install odl-dlux-core odl-dluxapps-topology odl-dluxapps-nodes odl-dluxapps-yangui odl-dluxapps-yangutils odl-mdsal-apidocs odl-restconf 
+	
+
+	Verification: http://172.20.254.225:8181/index.html U:<controller-user> P:<controller-password>
+
+ 
+	
+###### ODL Netconf build log ######
+
+
+#ODL Netconf
+
+#Assumption: odl-restconf feature is already installed.
+#ODL supports 2 types of Northbound Netconf plugins that can be used to interact with it.
+
+#	1. NETCONF server for ODL config-subsystem (listening on port 1830) . This is not supported starting with the Boron release and is eventually deprecated.
+#		
+#	2. NETCONF server for MD-SAL (listening by default on port 2830)
+#		This acts as an alternative Northbound interface for MD-SAL (besides RESTCONF) and allows users to interact with ODL .
+#		It is also possible for ODL to mount its own md-sal subsystem as a netconf node to  read/write data from MD-SAL’s datastore and to invoke its rpcs.
+#		The northbound MDSAL netconf plugin is activated by installing feature odl-netconf-mdsal
+
+
+#There are two ways for ODL to connect to netconf nodes using a southbound plugin.
+
+1. Using the controllerconfig subsystem loopback mount point Northbound plugin and mount netconf nodes using it. Need to mount controller config subsystem as a netconf node first.
+2. Directly using MDSAL network topology <- preferred method.  This will be the only method available in future releases. We use this option.
+	This option is activated by installing odl-netconf-topology or odl-netconf-clustered-topology package <- recommended.  			
+			
+#ODL Netconf set up.
+# Install Netconf client southbound plugin:
+	feature:install odl-netconf-clustered-topology 
+	
+#Install ODL Northbound MDSAL Netconf server
+	feature:install odl-netconf-mdsal
+	
+# Verify installed packages
+feature:list -i
+#####################################END#####################
+
+

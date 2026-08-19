@@ -1,0 +1,15 @@
+These host scripts support the virtual network lab runtime.
+
+They are used to:
+
+1. Bring QEMU-created TAP interfaces up or down.
+2. Attach management TAP interfaces to the management bridge.
+3. Start and stop virtual routers and switches for the lab.
+
+Use the server-specific directories when launching devices on each QEMU host.
+
+Sanitization note: script paths such as `/home/lab/BBLAB`, private IP addresses, TAP names, MAC addresses, and virtual disk filenames are lab-local examples from the original environment. Update them to match your hosts and use only properly licensed vendor images.
+
+Before private lab use, review every script for host-specific interface names,
+bridge names, disk image paths, and topology values. Replace those values with
+local lab settings before executing the scripts.
