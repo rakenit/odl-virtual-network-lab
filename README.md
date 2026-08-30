@@ -182,7 +182,3 @@ network operating system images outside this repository.
 | `Variables.txt` | Port, TAP, MAC address, and tunnel allocation reference. |
 | `docs/build-logs/` | Historical host and controller build notes. |
 
-## Recommended Repository Description
-
-A public proof-of-concept lab reference for building an OpenDaylight-managed Open vSwitch Layer 2 topology with QEMU, TAP interfaces, VXLAN, L2TPv3, and RESTCONF automation.
-
